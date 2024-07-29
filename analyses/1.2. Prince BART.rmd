@@ -1,0 +1,42 @@
+
+
+```{r}   
+options(digitis = 3)
+options(scipen = 10^5)
+options(help_type = "html")
+options(mc.cores = parallel::detectCores())
+
+library(tidyverse)
+library(haven)
+library(posterior)
+library(dbarts)
+library(parallel)
+#source("R/varselaux.r")
+```
+
+Load data
+```{r}
+dt <- readRDS("data/dtwp.rds")
+colnames(dt)
+```
+
+
+Run main Prince BART
+```{r}
+source("R/princeB.r")
+mrm <- mc_psbart(dt
+  # iterations  drop
+  , n_warmup =  100
+  # iterations to keep
+  , n_samples = 150
+  # chains
+  , n_chains = 20
+  ,  keep_trees = FALSE
+)
+
+
+mate_c(mrm)
+matt_c(mrm)
+sate_c(mrm)
+satt_c(mrm)
+```

@@ -1,0 +1,62 @@
+
+
+```{r} 
+library(tidyverse)
+options(digitis = 3)
+options(scipen = 10^5)
+options(help_type = "html")
+options(mc.cores = parallel::detectCores())
+library(haven)
+library(dbarts)
+```
+
+
+Select Y, W, never any modern, drop other outcome variables
+```{r}
+df <- readRDS("data/df.rds")
+colnames(df)
+dt <-
+  df %>%
+  mutate(
+    Y = e_work
+    , W = as.numeric(e_anymodern)
+  ) %>%
+  filter(anymodern_ever == 0 & anymodern_now == 0) %>%
+  select(!c(starts_with("e_"), anymodern_ever, anymodern_now, city
+      , knwl_contraception_noprobe, att_beat_ok
+    )
+  )
+
+colnames(dt)
+
+summary(dt)
+```
+
+
+#propensity
+```{r}
+set.seed(0203)
+me <- bart2(Z ~ .
+  , data = select(dt, !c(Y, W))
+  , n.trees = 75L
+  , k = 2
+  , n.threads = 1
+)
+
+
+dt$e <- fitted(me,  type = "bart")
+
+oplot <- ggplot(dt, aes(x = e, fill = factor(Z))) +
+  geom_density(alpha = .2, color = "white") +
+  xlab("Propensity score") +
+  guides(fill = guide_legend(title = "Z")) +
+  theme_minimal()
+oplot
+
+png("output/overlap.png"
+    , width = 480 * 3, heigh = 480 * 2.5, res = 300)
+oplot
+dev.off()
+
+saveRDS(dt, "data/dtwp.rds")
+```

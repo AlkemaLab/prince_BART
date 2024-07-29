@@ -1,0 +1,470 @@
+
+
+```{r}
+library(tidyverse)
+options(digitis = 3)
+options(scipen = 10^5)
+options(help_type = "html")
+options(mc.cores = parallel::detectCores())
+library(haven)
+```
+
+* Balanced panel base_end data N=21,344 observations; 10,672 women
+```{r}
+df <- read_dta("data/nga_end_wm_match_20150305.dta")
+dim(df)
+```
+
+
+*** Instrument (Z): early adoption
+* assignment to treatment
+```{r}
+df <-
+  df %>%
+  mutate(Z = as.numeric(!(city == 2 | city == 6)))
+
+df %>%
+  group_by(city, Z) %>%
+  summarize(n = n())
+```
+
+* NURHI variables - Demand side
+```{r}
+df <-
+  df %>%
+  mutate(
+    #****NURHI TV exposure (NURHI TV spots/jingles
+    #|  any NURHI slogans seen on TV)
+    nurhiTV = case_when(
+      ew936 == 1 | ew938 == 1 | ew940 == 1 | ew942 == 1 | ew944 == 1
+      | (ew953 == 1 & ew955c == 1) | (ew957 == 1 & ew959c == 1)
+      | (ew960 == 1 & ew962c == 1) | (ew964 == 1 & ew966c == 1)
+      | (ew967 == 1 & ew969c == 1) | (ew970 == 1 & ew972c == 1)
+      | (ew974 == 1 & ew976c == 1) ~ 1
+      , ew966xs == "YORUBA STATION DSTV" | ew966xs == "YORUBA MOVIES" ~ 1
+      , ew969xs == "YORUBA MOVIE" ~ 1
+      , ew972xs == "YORUBA MOVIE" | ew972xs == "YORUBA MOVIES" ~ 1
+      , TRUE ~ 0
+    )
+    # ****NURHI Radio Dramas (heard of and ever listened to the drama
+    #|  radio drama played at a meeting
+    #|  NURHI slogans heard on a radio drama)
+    , RadioDrma = case_when(
+      (ew914 == 1 & ew916 == 1) | (ew914 == 1 & ew918 == 1)
+      | (ew953 == 1 & ew955a == 1) | (ew957 == 1 & ew959a == 1)
+      | (ew960 == 1 & ew962a == 1) | (ew964 == 1 & ew966a == 1)
+      | (ew967 == 1 & ew969a == 1) | (ew970 == 1 & ew972a == 1)
+      | (ew974 == 1 & ew976a == 1) ~ 1
+      , ew962xs == "RADIO" ~ 1
+      , TRUE ~ 0
+    )
+    #********************NURHI Radio Spots/Jingles
+    , RdioSpt = case_when(
+      (ew914 == 1 & ew917 == 1) | (ew914 == 1 & ew919 == 1)
+      | (ew914 == 1 & ew921 == 1) | (ew914 == 1 & ew923 == 1)
+      | (ew914 == 1 & ew925 == 1) | (ew914 == 1 & ew927 == 1)
+      | (ew953 == 1 & ew955b == 1) | (ew957 == 1 & ew959b == 1)
+      | (ew960 == 1 & ew962b == 1) | (ew964 == 1 & ew966b == 1)
+      | (ew967 == 1 & ew969b == 1) | (ew970 == 1 & ew972b == 1)
+      | (ew974 == 1 & ew976b == 1) ~ 1
+      , TRUE ~ 0
+    )
+    #******************NURHI Community Outreach 
+    #(Life Events  |  t-shirt at meeting  |  slogans seen on swag or events)
+    , nurhicomm = case_when(
+      ew991a == 1 | ew991b == 1 | ew991c == 1 | ew991d == 1 | ew991e == 1
+      |  (ew953 == 1 & ew956 == 1)
+      |  (ew953 == 1 & (ew955e == 1  |  ew955f == 1  |  ew955g == 1
+            |  ew955h == 1  |  ew955i == 1  |  ew955j == 1  |  ew955k == 1
+            |  ew955l == 1  |  ew955o == 1  |  ew955p == 1
+            |  ew955r == 1
+          ))
+      |  (ew957 == 1 & (ew959e == 1  |  ew959f == 1  |  ew959g == 1
+            |  ew959h == 1  |  ew959i == 1  |  ew959j == 1  |  ew959k == 1
+            |  ew959l == 1  |  ew959o == 1  |  ew959p == 1
+            |  ew959r == 1
+          ))
+      |  (ew960 == 1 & (ew962e == 1  |  ew962f == 1  |  ew962g == 1
+            |  ew962h == 1  |  ew962i == 1  |  ew962j == 1  |  ew962k == 1
+            |  ew962l == 1  |  ew962o == 1  |  ew962p == 1
+            |  ew962r == 1
+          ))
+      |  (ew964 == 1 & (ew966e == 1  |  ew966f == 1  |  ew966g == 1
+            |  ew966h == 1  |  ew966i == 1  |  ew966j == 1  |  ew966k == 1
+            |  ew966l == 1  |  ew966o == 1  |  ew966p == 1
+            |  ew966r == 1
+          ))
+      |  (ew967 == 1 & (ew969e == 1  |  ew969f == 1  |  ew969g == 1
+            |  ew969h == 1  |  ew969i == 1  |  ew969j == 1  |  ew969k == 1
+            |  ew969l == 1  |  ew969o == 1  |  ew969p == 1
+            |  ew969r == 1
+          ))
+      |  (ew970 == 1 & (ew972e == 1  |  ew972f == 1  |  ew972g == 1
+            |  ew972h == 1  |  ew972i == 1  |  ew972j == 1  |  ew972k == 1
+            |  ew972l == 1  |  ew972o == 1  |  ew972p == 1
+            |  ew972r == 1
+          ))
+      |  (ew974 == 1 & (ew976e == 1  |  ew976f == 1  |  ew976g == 1
+            |  ew976h == 1  |  ew976i == 1  |  ew976j == 1  |  ew976k == 1
+            |  ew976l == 1  |  ew976o == 1  |  ew976p == 1
+            |  ew976r == 1
+          ))
+      |  ew990 == 1
+      |  (ew955xs == "CALLENDER" | ew955xs == "CAR STICKER"
+        | ew955xs == "DURING	A GATHERING" | ew955xs == "MARKET PALACE"
+        | ew955xs == "STICKER" | ew955xs == "ON THE MAIN ROAD"
+        | ew955xs == "THE FLOOR BY THE ROAD SIDE ON"
+        | ew955xs == "VEHICLES"
+      )
+      | ew959xs == "SEMINAR" | ew959xs == "STICKER"
+      | ew959xs == "WEDDING" | ew959xs == "WOMEN MEETING"
+      | ew962xs == "AT TRAINING" | ew962xs == "MARKET"
+      | ew962xs == "PARADE RALLY" | ew962xs == "SCHOOL"
+      | ew966xs == "IJAB (VEIL)" | ew966xs == "WOMEN GROUP"
+      | ew969xs == "CALENDAR" | ew969xs == "CALENDER"
+      | ew969xs == "WOMEN GROUP"
+      | ew972xs == "CALENDAR"
+      | ew976xs == "ANI-ANANTA  &  NATIVE CEREMONY"
+      | ew976xs == "AT SCHOOL"
+      | ew976xs == "FRIENDS/NEIGHBOURS/CEREMONIES"
+      | ew976xs == "FROM SCHOOL" | ew976xs == "HIJAB"
+      | ew976xs == "HIJABS"
+      | ew976xs == "IN A MOSQUE"
+      | ew976xs == "IN THE  MOSQUE BY HEALTH WORKERS"
+      | ew976xs == "NAMING"
+      | ew976xs == "NAMING CEREMONY" | ew976xs == "NAMING CEREMORY"
+      | ew976xs == "NAMING &  NEIGHBOUR"
+      | ew976xs == "NAMING/ANTI NATAL"
+      | ew976xs == "NAMING/FRIENDS/NEIGHBOUR"
+      | ew976xs == "NAMINR CEREMONY"
+      | ew976xs == "NEIGHBOURS/ NAMING CEREMONY"
+      | ew976xs == "WEDDING" | ew976xs == "WEDDING PLACE"
+      | ew976xs == "WEDDING/NAMINGS" | ew976xs == "WOMAN  &  NAMING"
+      | ew976xs == "WOMAW GROUP"
+      | ew976xs == "WOMEN AND NAMING CEREMONY"
+      | ew976xs == "WOMEN GROUP" | ew976xs == "WOMEN HIJABS"
+      | ew976xs == "WOMEN'S GROUP" | ew976xs == "WOMENS GROUP" ~ 1
+      , TRUE ~ 0
+    )
+    #******************************NURHI Logo
+    , logo = case_when(
+      ew978a == 1  |  ew978b == 1  |  ew978c == 1 ~ 1
+      , TRUE ~ 0
+    )
+    #******************************NURHI Print Media Cards
+    , cards = case_when(
+      ew981 == 1  |  ew983 == 1 ~ 1
+      , TRUE ~ 0
+    )
+    #*****************************NURHI Billboards
+    , billboard = case_when(
+      ew953 == 1 & ew955q == 1
+      |  ew957 == 1 & ew959q == 1
+      |  ew960 == 1 & ew962q == 1
+      |  ew964 == 1 & ew966q == 1
+      |  ew967 == 1 & ew969q == 1
+      |  ew970 == 1 & ew972q == 1
+      |  ew974 == 1 & ew976q == 1 ~ 1
+      , TRUE ~ 0
+    )
+    #*********************************NURHI Health Provider badge
+    , badge = case_when(
+      ew985 == 1 ~ 1
+      , TRUE ~ 0
+    )
+    #**********************************NURHI SMS campaign
+    #(This may not be all NURHI.
+    #There is another Youth RH SMS thing called MyQuestion)
+    , sms = case_when(
+      ew951 == 1 ~ 1
+      , TRUE ~ 0
+    )
+    #* Exposed generic TV (recoding missing values to no n=9)
+    , bgenTV = case_when(
+      w924 == 1 ~ 1
+      , w924 == 2  |  w924 == 9 ~ 0
+      , w917 == 2  |  w917 == 9 ~ 0
+    )
+    , egenTV = case_when(
+      ew929 == 1 ~ 1
+      , ew929 == 2  |  ew929 == 9 ~ 0
+      , ew917 == 2 ~ 0
+    )
+    #*****Exposed generic FP on radio
+    , bgenRDO = case_when(
+      w914 == 1 ~ 1
+      , w914 == 2  |  w914 == 9 ~ 0
+      , w909 == 2  |  w909 == 9 ~ 0
+    )
+    , egenRDO = case_when(
+      ew911 == 1 ~ 1
+      , ew911 == 2  |  ew911 == 9 ~ 0
+      , ew907 == 2 ~ 0
+    )
+    ##*******************************************************
+    #**********PROGRAM EXPOSURE VAR - REDUCED MODEL 3/24/2015
+    #********************************************************
+    #*TV Exposure - use general exposure to FP on TV in the last 3 months
+    #*NURHI Radio (at MT was radio drama and
+    # heard NURHI slogans on radio together)
+    , nurhiRADIO = case_when(
+      RadioDrma == 1  |  RdioSpt == 1 ~ 1
+      , TRUE ~ 0
+    )
+    #**NURHI community outreach 
+    #(at MT we included heard FP at groups or clubs + life events)
+    , nurhiOUTRCH = case_when(
+      ew991a == 1 | ew991b == 1 | ew991c == 1 | ew991d == 1 | ew991e == 1
+      | ew990 == 1 ~ 1
+      , TRUE ~ 0
+    )
+    #***Logo *same as MT
+    #**Provider badge
+    , prtmedia = case_when(
+      cards == 1 | billboard == 1 ~ 1
+      , TRUE ~ 0
+    )
+  )
+
+df <-
+  df %>%
+  mutate(e_anyexp =
+    if_else(
+            nurhiTV == 1
+            | nurhiRADIO == 1
+            | nurhiOUTRCH == 1
+            | badge == 1
+            | prtmedia, 1, 0)
+  )
+```
+
+
+*** Long-term outcomes
+```{r}
+#' 812 As you know, some women take up jobs
+#' for which they are paid in cash or kind.
+#' Others sell things, have a small business or
+#' work on the family farm or in the family business.
+#' In the last seven days, have you done any of these things or any other work?
+
+df <-
+  df %>%
+  mutate(
+    #work last week
+    b_work_lw = if_else(w812 == 1, 1, 0)
+    , e_work_lw = if_else(ew812 == 1, 1, 0)
+    #work last year
+    , b_work = if_else(w813  == 1, 1, 0)
+    , e_work = if_else(ew812 == 1 | ew813 == 1, 1, 0)
+    #self-employed
+    , b_selfemp = if_else(w814  == 3, 1, 0, 0)
+    , e_selfemp = if_else(ew814  == 3, 1, 0, 0)
+    #cash
+    , b_ocash = if_else(w818 == 1, 1, 0, 0)
+    , e_ocash = if_else(ew818 == 1, 1, 0, 0)
+    , b_anymodern = anymodern
+    , e_anymodern = eanymodern
+  )
+```
+
+
+*** Demographics
+```{r}
+df <-
+  df %>%
+  mutate(
+         b_parity = w208
+         , e_parity = ew208)
+```
+
+*** Intentions /fertility preferences
+```{r}
+df$wantnobirth <- as.numeric(
+  df$w602 == 2 | df$w603 %in% c(126:160, 203:230, 995)
+)
+df$wantnobirth[is.na(df$wantnobirth)] <- 0
+
+#SECTION 8: GENDER INEQUITY MEASURES
+df$hasmoney <- as.numeric(df$w825 == 1)
+#sexual activity Q.504
+df$hadsex <- as.numeric(df$w501 %in% 10:36)
+```
+
+
+
+*** Attitudes
+```{r}
+modern <- c(1:8, 12:13)
+df <-  df %>%
+  mutate(
+    knwl_contraception = if_else(
+      if_any(starts_with("w301")[modern], ~ .x %in% 1:2), 1, 0, 0
+    )
+    , knwl_contraception_noprobe = if_else(
+      if_any(starts_with("w301")[modern], ~ .x %in% 1), 1, 0, 0
+    )
+    # You could use a method of family planning/birth
+    # spacing/child spacing even if your partner doesn’t want you to
+    , selfeff_obtain = if_else(w724 %in% 3:4, 1, 0, 0)
+    # Contraceptive are dangerous to your health.
+    , att_safety = if_else(w385 %in% 1:2, 1, 0, 0)
+    #In your opinion, is it okay for a woman to use family
+    #planning/birth spacing/child spacing without her
+    #husband’s or partner’s knowledge if: 1=YES
+    , att_autonomous_use = if_else(w740A == 1, 1, 0, 0)
+  )
+
+
+#Sometimes a man is annoyed or angered by things that his wife does.
+#'In your opinion, is a man justified in hitting or
+#'beating his wife in the following situations?
+beat <- paste0("w827", LETTERS[1:5])
+df[, beat][df[, beat] == 9] <- NA
+df$att_beat_ok <- as.numeric(apply(df[, beat] != 2, 1, sum, na.rm = TRUE) > 0)
+```
+
+
+*** FP behavior
+```{r}
+modern <- c(1:8, 12:13)
+#Modern methods of contraception include
+# male and female sterilization 1:2
+#, daily pill 3
+#, IUD 4
+#, implants 6
+#, injectables 5
+#, male and female condoms 7:8
+#, emergency contraception 12
+#, and lactational amenorrhea 13
+# spermicide 14? diafragm 15?
+df <-
+  df %>%
+  mutate(
+    #Q302 Have you ever used (METHOD)?
+    e_anymodern_ever = if_else(
+      if_any(starts_with("ew302")[modern], ~ .x == 1), 1, 0, 0
+    ), b_anymodern_ever = if_else(
+      if_any(starts_with("w302")[modern], ~ .x == 1), 1, 0, 0
+    )
+    #Q255 How old were you when you got pregnant for the very first time?
+    , e_teen_birth = if_else(ew255 < 18, 1, 0, 0)
+    #Q215 How old were you when you got pregnant for the very first time?
+    , b_teen_birth = if_else(w215 < 18, 1, 0, 0)
+  )
+
+#BIRTH HISTORY
+#births since 2012
+df$e_birth12 <- df$ew225
+df$e_birth12[is.na(df$e_birth12)] <- 0
+```
+
+
+*** analysis dataset
+```{r}
+df <-
+  df %>%
+  ### outcomes
+  select(c(
+    e_anymodern, e_anymodern_ever
+    , e_work, e_work_lw
+    , e_teen_birth
+    , e_anyexp
+    , e_selfemp, e_ocash
+    , e_birth12
+    #tinstrument
+    , Z
+    ### covaritatesm (baseline)
+    , b_teen_birth
+    , b_anymodern, b_anymodern_ever
+    , city
+    , language
+    , marstat#, emarstat
+    , age #, eage
+    , age5 #, eage5
+    , religion#, ereligion
+    , educationcs#, eeducationcs
+    , wealth#, ewealth
+    , wealth_across_city#, esix_city_wealth
+    , b_parity
+    , b_work
+    , b_work_lw
+    , bgenTV, bgenRDO
+    , knwl_contraception:att_autonomous_use
+    , b_ocash
+    , b_selfemp
+    , wantnobirth
+    , hasmoney
+    , hadsex
+    , att_beat_ok
+    ###design
+    #, location_code, hhnum
+    #, women_weight, ewoman_weight
+    #, women_weight_across_city, ewoman_weight_6city
+  ))
+# generating dummies
+df <-
+  df %>%
+  select(!c(wealth, language)) %>%
+  mutate(
+    bage = age
+    , religion = factor(religion)
+    , marstat = factor(marstat)
+    , age = factor(age5)
+    , education = factor(educationcs)
+    , wealth = factor(wealth_across_city)
+    , parity = if_else(b_parity > 7, 7, b_parity)
+    , parity = factor(parity)
+  ) %>%
+  fastDummies::dummy_cols(remove_selected_columns = TRUE)
+
+#collapsing rare categories
+df <-
+  df %>%
+  mutate(no_edu = education_0 + education_1) %>%
+  mutate(separated = marstat_2 + marstat_3) %>%
+  mutate(Christian = religion_1 + religion_2) %>%
+  select(!c(marstat_2, marstat_3, religion_1, religion_2
+      , education_0, education_1
+    )
+  ) %>%
+  select(!c(ends_with("_9"), religion_5, age5))
+
+# renaming
+df <-
+  df %>%
+  rename(
+    age = bage
+    , work = b_work
+    , wealth = wealth_across_city
+    , work_last_year = b_work
+    , work_last_week = b_work_lw
+    , Muslim = religion_3
+    , parity = b_parity
+    , education = educationcs
+    , teen_birth = b_teen_birth
+    , FP_radio = bgenRDO
+    , FP_TV = bgenTV
+    , never_married = marstat_0
+    , in_union = marstat_1
+    , want_no_birth = wantnobirth
+    , has_money = hasmoney
+    , had_sex = hadsex
+    , paid_cash = b_ocash
+    , self_employed = b_selfemp
+    , edu_primary = education_2
+    , edu_junioHS = education_3
+    , edu_seniorHS = education_4
+    , edu_higher = education_5
+    , age_15_19 = age_1
+    , age_20_24 = age_2
+    , age_25_29 = age_3
+    , age_30_34 = age_4
+    , age_35_39 = age_5
+    , age_40_44 = age_6
+    , age_45_49 = age_7
+    , anymodern_now = b_anymodern
+    , anymodern_ever = b_anymodern_ever
+  )
+
+saveRDS(df, "data/df.rds")
+```
