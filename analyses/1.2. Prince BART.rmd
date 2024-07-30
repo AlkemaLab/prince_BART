@@ -20,8 +20,9 @@ dt <- readRDS("data/dtwp.rds")
 colnames(dt)
 ```
 
-
-Run main Prince BART
+***Run main Prince BART***
+The numer of interation is very small for testing
+It should be increase to 1000 and 1500 for real analysis 
 ```{r}
 source("R/princeB.r")
 mrm <- mc_psbart(dt

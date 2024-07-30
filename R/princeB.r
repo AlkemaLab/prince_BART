@@ -83,7 +83,7 @@ fit_psbart <- \(
     , n.thin = 20L
     , n.chains = 1L
     , n.trees = ntrees
-   # , n.threads = 1
+    , n.threads = 1
   )
   # Create samplers
   # k values chosen based on simulations
@@ -331,7 +331,7 @@ mc_psbart <- \(
   , k = 2
   , n_trees = 200
 ) {
-  res0 <- mclapply(1:n_samples
+  res0 <- mclapply(1:n_chains
     , fit_psbart
     , data = dt
     , n_warmup = n_warmup
