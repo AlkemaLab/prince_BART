@@ -11,7 +11,6 @@ library(haven)
 library(posterior)
 library(dbarts)
 library(parallel)
-#source("R/varselaux.r")
 ```
 
 Load data
@@ -25,19 +24,30 @@ The numer of interation is very small for testing
 It should be increase to 1000 and 1500 for real analysis 
 ```{r}
 source("R/princeB.r")
+RNGkind("L'Ecuyer-CMRG")
+set.seed(0203)
+mc.reset.stream()
 mrm <- mc_psbart(dt
   # iterations  drop
-  , n_warmup =  100
+  , n_warmup =  1000
   # iterations to keep
-  , n_samples = 150
+  , n_samples = 1500
   # chains
   , n_chains = 20
-  ,  keep_trees = FALSE
+  , keep_trees = TRUE
 )
 
 
 mate_c(mrm)
 matt_c(mrm)
 sate_c(mrm)
+sate_c(mrm, induce_residual_corr = TRUE)
 satt_c(mrm)
+satt_c(mrm, induce_residual_corr = TRUE)
+```
+
+```{r}
+saveRDS(mrm$trees, "output/princeB_usenow_trees_d0.rds")
+saveRDS(mrm$imp,   "output/princeB_usenow_imp_d0.rds")
+saveRDS(mrm$probs, "output/princeB_usenow_probs_d0.rds")
 ```

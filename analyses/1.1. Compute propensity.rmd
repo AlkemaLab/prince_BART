@@ -1,5 +1,3 @@
-
-
 ```{r} 
 library(tidyverse)
 options(digitis = 3)
@@ -24,11 +22,11 @@ dt <-
   filter(anymodern_ever == 0 & anymodern_now == 0) %>%
   select(!c(starts_with("e_"), anymodern_ever, anymodern_now, city
       , knwl_contraception_noprobe, att_beat_ok
+      #, had_sex, has_money, want_no_birth # added in April 23
     )
   )
 
 colnames(dt)
-
 summary(dt)
 ```
 

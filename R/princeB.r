@@ -2,11 +2,6 @@ library(tidyverse)
 library(dbarts)
 library(posterior)
 
-#data <- dt
-#n_warmup = 5
-#n_samples = 2
-#save_trees = TRUE
-#i <- 6
 #==============================================================================
 #'data must contain
 #' Z (assigment),
@@ -47,14 +42,14 @@ fit_psbart <- \(
     )
 
   # Method-of-moment based estiamtes for reference
-  intat <- mean(W[Z == 0])
-  intnt <- mean((W == 0)[Z == 1])
+  intat <- coef(lm(W ~ ., data.frame(W, X)[Z == 0, ]))[1]
+  intnt <- coef(lm(W == 0 ~ ., data.frame(W, X)[Z == 1, ]))[1]
   intco <- 1 - intat - intnt
 
-  inty1at <- mean(Y[W == 1 & Z == 0])
-  inty0nt <- mean(Y[W == 0 & Z == 1]) #nt
-  inty1   <- mean(Y[W == 1 & Z == 1]) #co or at
-  inty0   <- mean(Y[W == 0 & Z == 0]) #co or nt
+  inty1at <- coef(lm(Y ~ ., data.frame(Y, X)[W == 1 & Z == 0, ]))[1] #at
+  inty0nt <- coef(lm(Y ~ ., data.frame(Y, X)[W == 0 & Z == 1, ]))[1] #nt
+  inty1   <- coef(lm(Y ~ ., data.frame(Y, X)[W == 1 & Z == 1, ]))[1] #co or at
+  inty0   <- coef(lm(Y ~ ., data.frame(Y, X)[W == 0 & Z == 0, ]))[1] #co or nt
 
   intco_noat <- intco / (intco + intnt)
   intco_nont <- intco / (intco + intat)
@@ -83,12 +78,10 @@ fit_psbart <- \(
     , n.thin = 20L
     , n.chains = 1L
     , n.trees = ntrees
+    # together with mc.reset.stream() this should ensure reproducibility
     , n.threads = 1
   )
-  # Create samplers
-  # k values chosen based on simulations
-  # underfits memebership,
-  # overfits outcome conditional on membership
+
   sampler_co <- dbarts(
     X
     , co
@@ -180,11 +173,8 @@ fit_psbart <- \(
     sample_y0co   <- sampler_y0co$run()
     sample_y1co   <- sampler_y1co$run()
 
-    # prediction based on current run
-    #' Note:
-    #' this predictions ("p..." and "m...") are proportions/probabilities
-    #' NOT imputed binary values
-    #' this parameters are used in the update of the class probabilities
+    # probabilities based on current run
+   
     pco     <- pnorm(sample_co$test)
     patnoco <- pnorm(sample_atnoco$test)
 
@@ -197,7 +187,7 @@ fit_psbart <- \(
     my1co   <- pnorm(sample_y1co$test)
 
     #' update class probabilities using Bayes rule
-    #' based on observed Y (not imputed)
+    #' based on observed Y
     #' and current estimates of p's and m's
     pcoy0  <-
       Y * (pco * my0co /
@@ -217,7 +207,7 @@ fit_psbart <- \(
 
     #' Draw a sample from the posterior class probabilities
     #' NOTE: these are imputed discrete values
-    #' based on the estimated class probabilities
+
     nty <- rbinom(nrow(data), 1, (1 - pcoy0))
     aty <- rbinom(nrow(data), 1, (1 - pcoy1))
     # impute new valeus when missing
@@ -230,7 +220,6 @@ fit_psbart <- \(
     #' (becouse the low proportion of compliers
     #' sometimes there may be none
     #' we skip the update in those cases
-    #' this may need a differnet approach (maybe rejecting the entire sample)
 
     if (sum(co) > 0) {
       dt_co     <- dbartsData(X, co, test = X)
@@ -469,7 +458,8 @@ get_mix_tau <- \(p_arr, treated = NULL) {
 
 
 get_sample_tau <- \(imp_g, imp_o
-  , treated = NULL, include_corr = TRUE
+  , treated = NULL
+  , include_corr = FALSE
 ) {
   if (is.null(treated)) {
     treated <- rep(TRUE, nrow(imp_g))
@@ -484,7 +474,9 @@ get_sample_tau <- \(imp_g, imp_o
   pc <- apply(co[, , treated], 1:2, mean)
 
   Y0 <- Y1 <- NULL
-  if(include_corr) {
+
+  if (include_corr) {
+    print("including residual correlation between potential outcomes")
     Y0 <- imp_o[, , "cy0", ]
     Y1 <- imp_o[, , "cy1", ]
   } else {
@@ -494,10 +486,11 @@ get_sample_tau <- \(imp_g, imp_o
 
   Y0[co == 0] <- NA
   Y1[co == 0] <- NA
+  tau <- Y1 - Y0
 
   Y0c <- apply(Y0[, , treated], 1:2, mean, na.rm = TRUE)
   Y1c <- apply(Y1[, , treated], 1:2, mean, na.rm = TRUE)
-  tau_c <- Y1c - Y0c
+  tau_c <- apply(tau[, , treated], 1:2, mean, na.rm = TRUE)
 
 
   kqts <- abind::abind(list(
@@ -517,9 +510,6 @@ get_sample_tau <- \(imp_g, imp_o
 #================================================================
 ###* predict function
 #================================================================
-#'this was being used for partial dependece plots
-#' but the results were not great
-#' very large uncertainty
 predict.trees <- \(trees
   , scaled_x
   , n_cores = 12
@@ -566,7 +556,7 @@ getPredictionsForTree <- function(tree, x) {
 #getPredictionsForTree(treeOfInterest, bartFit$fit$data@x[1:5,])
 
 #=============================================================
-#summary fucntions
+#summary functions
 #=============================================================
 mate_c <- \(prince_bart_fit) {
   prob <- prince_bart_fit$probs
