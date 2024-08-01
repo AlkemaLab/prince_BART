@@ -1,0 +1,5 @@
+
+/archive
+*.html
+/output
+analyses/misc.rmd
