@@ -1,0 +1,1369 @@
+#' Generalize Treatment Effects to External Populations (Transportability)
+#'
+#' Estimates Population Average Treatment Effects (PATE) in an external
+#' population using a fitted \code{princebart} model and external data, possibly from complex sample surveys.
+#' Assumes that covariates X capture all sources of effect heterogeneity,
+#' allowing the conditional complier effect CATE_C(x) to generalize to the
+#' target population.
+#'
+#' @param princebart_fit A fitted \code{princebart} object with \code{keep_trees = TRUE}.
+#' @param newdata A data.frame containing the external population (e.g., survey data).
+#'   Covariates present in the source data but missing from \code{newdata} will be
+#'   automatically detected and multiply imputed using auxiliary BART models.
+#' @param subpop Logical vector of length \code{nrow(newdata)} indicating which
+#'   units belong to the target subpopulation. Default is all units.
+#' @param psu Vector of primary sampling unit identifiers for \code{newdata}.
+#'   Required for complex survey inference.
+#' @param weights Vector of survey weights for \code{newdata}. Default is equal weights.
+#' @param fast_propensity Logical; if TRUE (default), compute instrument propensity
+#'   e = P(Z|X) once using only covariates common to both source and external data,
+#'   before imputation. This is much faster. If FALSE, compute e for each 
+#'   MI-completed dataset (slower but more statistically more faithful 
+#'  when the propensity depends strongly on imputed variables).
+#' @param n_cores Number of cores for parallel computation. Default is 1.
+#' @param seed Random seed for reproducibility.
+#' @param verbose Logical; print progress messages. Default is FALSE
+#'
+#' @return An object of class \code{general_pate} containing:
+#'   \itemize{
+#'     \item \code{pate}: Point estimate (posterior mean) of the PATE
+#'     \item \code{ci}: 95\% credible interval for PATE
+#'     \item \code{sd}: Posterior standard deviation
+#'     \item \code{draws}: Vector of posterior draws of the PATE
+#'     \item \code{y0}: Array of predicted Y(0) values (units x iterations x chains)
+#'     \item \code{y1}: Array of predicted Y(1) values (units x iterations x chains)
+#'     \item \code{subpop}: Subpopulation indicator used
+#'     \item \code{psu}: PSU identifiers used
+#'     \item \code{weights}: Survey weights used
+#'   }
+#'
+#' @details
+#' This function implements a multi-step procedure:
+#' \enumerate{
+#'   \item Multiple imputation of missing covariates in external data using
+#'     auxiliary BART models fit on source data.
+#'   \item Feature expansion: compute instrument propensity e = P(Z|X) in
+#'     external data using BART fit on source data.
+#'   \item Predict potential outcomes Y(0) and Y(1) using saved princeBART trees.
+#'   \item Estimate PATE using Bayesian bootstrap for complex survey data.
+#' }
+#'
+#' The resulting PATE is a population-level estimand defined over the specified target population.
+#'
+#' The key identifying assumption is that \eqn{\mathrm{CATE}_C(x)} is transportable,
+#' meaning that conditional on X, treatment effects for compliers in the source
+#' study equal conditional effects in the target population.
+#'
+#' For sensitivity analyses (overlap trimming, confounding bounds), use
+#' \code{\link{general_BART_overlap}} and \code{\link{general_BART_transportability}}
+#' on the returned object.
+#'
+#' @examples
+#' \dontrun{
+#' # Fit princeBART on source study
+#' fit <- prince_BART(Y ~ X1 + X2 + X3 | Z | W, data = source_data,
+#'                  keep_trees = TRUE, n_samples = 1000)
+#'
+#' # Generalize to external survey population
+#' pate <- general_BART(
+#'   princebart_fit = fit,
+#'   newdata = survey_data,
+#'   subpop = survey_data$eligible == 1,
+#'   psu = survey_data$cluster_id,
+#'   weights = survey_data$survey_weight,
+#'   n_cores = 4
+#' )
+#'
+#' # Run sensitivity analyses on the result
+#' overlap <- general_BART_overlap(pate, threshold = 0.05)
+#' sens <- general_BART_transportability(pate, gamma = 2)
+#'
+#' print(pate)
+#' }
+#'
+#' @seealso \code{\link{general_BART_overlap}}, \code{\link{general_BART_transportability}}
+#'
+#' @export
+general_BART <- function(
+  princebart_fit,
+  newdata,
+  subpop = NULL,
+  psu = NULL,
+  weights = NULL,
+  fast_propensity = TRUE,
+  n_cores = 1L,
+  seed = NULL,
+  verbose = FALSE
+) {
+
+  # Input validation
+  if (!inherits(princebart_fit, "princebart")) {
+    stop("princebart_fit must be a 'princebart' object")
+  }
+  if (is.null(princebart_fit$trees)) {
+    stop("princebart_fit must have saved trees (use keep_trees = TRUE)")
+  }
+
+  newdata <- as.data.frame(newdata)
+  n_new <- nrow(newdata)
+  
+  # Get chain/sample structure from princebart fit
+  trees_df <- as.data.frame(princebart_fit$trees)
+  n_chains <- length(unique(trees_df$chain))
+  n_samples <- length(unique(trees_df$iteration))
+
+  # Set seed if provided
+  if (!is.null(seed)) set.seed(seed)
+
+  # Default subpopulation: all units
+  if (is.null(subpop)) {
+    subpop <- rep(TRUE, n_new)
+  }
+
+  # Default weights: equal
+  if (is.null(weights)) {
+    weights <- rep(1, n_new)
+  }
+
+  # Default PSU: each unit is its own PSU
+  if (is.null(psu)) {
+    psu <- seq_len(n_new)
+  }
+
+  # Extract source data from princebart fit
+  source_X <- princebart_fit$data$X
+  source_Z <- princebart_fit$data$Z
+
+  # Get scaling parameters - check for new format ($scaling) vs old format (attributes)
+  x_cols <- setdiff(colnames(source_X), "e")
+  
+  if (!is.null(princebart_fit$scaling)) {
+    # New format: X is stored unscaled, scaling in separate slot
+    scaled_center <- princebart_fit$scaling$center
+    scaled_scale  <- princebart_fit$scaling$scale
+  } else {
+    # Old format: X is stored scaled, scaling in attributes
+    scaled_center <- attr(source_X, "scaled:center")
+    scaled_scale  <- attr(source_X, "scaled:scale")
+    
+    # Need to unscale source_X for consistency
+    if (!is.null(scaled_center) && !is.null(scaled_scale)) {
+      source_X_unscaled <- as.matrix(source_X[, x_cols, drop = FALSE])
+      for (j in seq_along(x_cols)) {
+        v <- x_cols[j]
+        if (v %in% names(scaled_center) && v %in% names(scaled_scale)) {
+          source_X_unscaled[, j] <- source_X_unscaled[, j] * scaled_scale[v] + scaled_center[v]
+        }
+      }
+      source_X_unscaled <- cbind(source_X_unscaled, e = source_X[, "e"])
+      source_X <- source_X_unscaled
+    }
+  }
+
+  if (is.null(scaled_center) || is.null(scaled_scale)) {
+    # Fallback: compute from source X without e
+    source_X_no_e <- source_X[, x_cols, drop = FALSE]
+    scaled_center <- colMeans(source_X_no_e)
+    scaled_scale <- apply(source_X_no_e, 2, stats::sd)
+  }
+
+  # Auto-detect missing covariates (source vars not in newdata)
+  mi_vars <- setdiff(x_cols, colnames(newdata))
+  common_vars <- intersect(x_cols, colnames(newdata))
+
+  # Notify user about auto-detected missing variables
+  if (length(mi_vars) > 0) {
+    message("Variables not present in external data (will be imputed): ",
+            paste(mi_vars, collapse = ", "))
+  }
+
+  # Pre-compute propensity if using fast mode (before imputation)
+  e_precomputed <- NULL
+  if (fast_propensity) {
+    if (verbose) message("Computing propensity on common covariates...")
+    propensity_bart_common <- dbarts::bart2(
+      source_X[, common_vars, drop = FALSE],
+      source_Z,
+      keepTrees = TRUE,
+      verbose = FALSE
+    )
+    e_precomputed <- colMeans(
+      stats::pnorm(
+        stats::predict(propensity_bart_common, newdata = newdata[, common_vars, drop = FALSE])
+      )
+    )
+    e_precomputed <- stats::qnorm(pmax(pmin(e_precomputed, 0.999), 0.001))
+  }
+
+  if (verbose) message("Step 1: Imputing missing covariates...")
+
+  # Step 1: Multiple imputation of missing X
+  mi_array <- NULL
+  if (length(mi_vars) > 0) {
+    mi_array <- impute_missing_x(
+      source_X = source_X[, x_cols, drop = FALSE],
+      source_data = princebart_fit$data,
+      newdata = newdata,
+      mi_vars = mi_vars,
+      n_samples = n_samples,
+      n_chains = n_chains,
+      n_cores = n_cores,
+      verbose = verbose
+    )
+  }
+
+  if (verbose) message("Step 2: Expanding instrument propensity...")
+
+  # Step 2: Fit propensity BART on source data (all covariates)
+  # Only needed if not using fast propensity mode
+  propensity_bart <- NULL
+  if (!fast_propensity) {
+    propensity_bart <- dbarts::bart2(
+      source_X[, x_cols, drop = FALSE],
+      source_Z,
+      keepTrees = TRUE,
+      verbose = FALSE
+    )
+  }
+
+  if (verbose) message("Step 3: Predicting potential outcomes...")
+
+  # Step 3: Predict Y(0) and Y(1) in external data
+  preds <- predict_external_outcomes(
+    trees = princebart_fit$trees,
+    newdata = newdata,
+    mi_array = mi_array,
+    mi_vars = mi_vars,
+    propensity_bart = propensity_bart,
+    e_precomputed = e_precomputed,
+    scaled_center = scaled_center,
+    scaled_scale = scaled_scale,
+    x_cols = x_cols,
+    n_samples = n_samples,
+    n_chains = n_chains,
+    n_cores = n_cores,
+    verbose = verbose
+  )
+
+  y0 <- preds$y0
+  y1 <- preds$y1
+
+  if (verbose) message("Step 4: Computing PATE...")
+
+  # Step 4: Compute PATE using survey-weighted Bayesian bootstrap
+  # y0, y1, tau are 3D: [units, iterations, chains]
+  tau <- y1 - y0
+
+  # Reshape tau from 3D [units, iterations, chains] to 2D [units, samples]
+  # Each (iteration, chain) pair becomes a separate posterior draw
+  n_iter <- dim(tau)[2]
+  n_ch <- dim(tau)[3]
+  tau_2d <- matrix(tau, nrow = n_new, ncol = n_iter * n_ch)
+
+  # Survey PATE with Bayesian bootstrap
+  pate_result <- survey_pate(
+    tau = tau_2d,
+    subpop = subpop,
+    psu = psu,
+    weights = weights,
+    seed = seed
+  )
+
+  # Construct result object with all info needed for sensitivity analyses
+  result <- list(
+    pate = pate_result$estimate,
+    ci = pate_result$ci,
+    sd = pate_result$sd,
+    draws = pate_result$draws,
+    y0 = y0,
+    y1 = y1,
+    tau = tau,
+    subpop = subpop,
+    psu = psu,
+    weights = weights,
+    newdata = newdata,
+    source_X = source_X,
+    source_Z = source_Z,
+    trees = princebart_fit$trees,
+    scaled_center = scaled_center,
+    scaled_scale = scaled_scale,
+    n_obs = sum(subpop),
+    seed = seed,
+    call = match.call()
+  )
+  class(result) <- "general_pate"
+
+  if (verbose) message("Done.")
+  result
+}
+
+
+# -----------------------------------------------------------------------------
+# Helper: Impute missing covariates using auxiliary BART models
+# -----------------------------------------------------------------------------
+impute_missing_x <- function(
+    source_X,
+    source_data,
+    newdata,
+    mi_vars,
+    n_samples,
+    n_chains,
+    n_cores = 1,
+    verbose = FALSE
+) {
+  # Fit auxiliary BART for each missing variable and impute
+  # Match the chain/sample structure of the princebart fit
+
+  # Covariates available in both source and newdata (excluding mi_vars)
+  common_vars <- intersect(colnames(source_X), colnames(newdata))
+  common_vars <- setdiff(common_vars, mi_vars)
+
+  if (length(common_vars) == 0) {
+    stop("No common covariates between source and newdata for imputation")
+  }
+
+  n_units <- nrow(newdata)
+
+  mi_list <- lapply(mi_vars, function(v) {
+    if (verbose) message("  Imputing: ", v)
+
+    # Fit BART on source data: v ~ common_vars
+    x_train <- source_X[, common_vars, drop = FALSE]
+    y_train <- source_data$X[, v]
+
+    # Check if binary or continuous
+    is_binary <- all(y_train %in% c(0, 1))
+
+    # Generate n_samples x n_chains draws to match princebart structure
+    mi_fit <- dbarts::bart2(
+      x_train, y_train,
+      newdata[, common_vars, drop = FALSE],
+      n.chains = n_chains,
+      n.samples = n_samples,
+      verbose = FALSE
+    )
+
+    # yhat.test structure from dbarts::bart2 with n.chains > 1:
+    # - 3D array: chains x samples x units
+    # - sigma: chains x samples
+    # If n.chains = 1: matrix (samples x units), sigma is vector
+    yhat <- mi_fit$yhat.test
+    sigma <- mi_fit$sigma
+    
+    # Normalize to 3D: chains x samples x units
+    if (length(dim(yhat)) == 2) {
+      # Single chain: samples x units -> 1 x samples x units
+      yhat <- array(yhat, dim = c(1, dim(yhat)))
+      if (!is.null(sigma)) sigma <- matrix(sigma, nrow = 1)
+    }
+    
+    n_ch <- dim(yhat)[1]
+    n_samp <- dim(yhat)[2]
+    # n_u <- dim(yhat)[3] # removed unused variable
+    
+    if (is_binary) {
+      # Binary: convert to probabilities and sample
+      probs <- stats::pnorm(yhat)
+      result <- array(stats::rbinom(length(probs), 1, probs), dim = dim(probs))
+    } else {
+      # Continuous: add noise using sigma (chains x samples)
+      if (is.null(sigma)) sigma <- matrix(1, nrow = n_ch, ncol = n_samp)
+      # Expand sigma to chains x samples x units
+      sigma_expanded <- array(NA_real_, dim = dim(yhat))
+      for (ch in seq_len(n_ch)) {
+        for (s in seq_len(n_samp)) {
+          sigma_expanded[ch, s, ] <- sigma[ch, s]
+        }
+      }
+      result <- yhat + stats::rnorm(length(yhat), 0, sigma_expanded)
+    }
+    
+    # Result is chains x samples x units
+    # Permute to units x samples x chains for consistency
+    aperm(result, c(3, 2, 1))
+  })
+
+  # Each element is units x samples x chains (already permuted above)
+  # Stack into 4D array: units x vars x samples x chains
+  mi_array <- array(NA_real_, dim = c(n_units, length(mi_vars), n_samples, n_chains))
+  for (j in seq_along(mi_vars)) {
+    mi_array[, j, , ] <- mi_list[[j]]
+  }
+
+  dimnames(mi_array) <- list(
+    unit = NULL,
+    var = mi_vars,
+    iteration = NULL,
+    chain = NULL
+  )
+
+  mi_array
+}
+
+
+# -----------------------------------------------------------------------------
+# Helper: Predict Y(0) and Y(1) in external data using saved trees
+# -----------------------------------------------------------------------------
+predict_external_outcomes <- function(
+  trees,
+  newdata,
+  mi_array,
+  mi_vars,
+  propensity_bart,
+  e_precomputed = NULL,
+  scaled_center,
+  scaled_scale,
+  x_cols,
+  n_samples,
+  n_chains,
+  n_cores = 1,
+  verbose = FALSE
+) {
+
+  trees <- as.data.frame(trees)
+  n_new <- nrow(newdata)
+  
+  # Get unique iterations and chains
+  iterations <- sort(unique(trees$iteration))
+  chains <- sort(unique(trees$chain))
+  n_iter <- length(iterations)
+  n_ch <- length(chains)
+
+  # Get variable names for scaling (excluding e)
+  scale_vars <- names(scaled_center)
+  scale_vars <- setdiff(scale_vars, "e")
+
+  # Function to predict for one (iteration, chain) combination
+  pred_fun <- function(idx) {
+    # Convert linear index to (iteration_idx, chain_idx)
+    iter_idx <- ((idx - 1) %% n_iter) + 1
+    chain_idx <- ((idx - 1) %/% n_iter) + 1
+    
+    iter <- iterations[iter_idx]
+    ch <- chains[chain_idx]
+
+    # Get base data
+    x <- newdata
+
+    # Inject MI imputations if available
+    # mi_array is [units, vars, iterations, chains]
+    if (!is.null(mi_array) && length(mi_vars) > 0) {
+      for (j in seq_along(mi_vars)) {
+        x[[mi_vars[j]]] <- mi_array[, j, iter_idx, chain_idx]
+      }
+    }
+
+    # Use pre-computed propensity if available, otherwise compute per-draw
+    if (!is.null(e_precomputed)) {
+      e_newdata_qnorm <- e_precomputed
+    } else {
+      e_newdata <- colMeans(
+        stats::pnorm(
+          stats::predict(propensity_bart, newdata = x[, x_cols, drop = FALSE])
+        )
+      )
+      e_newdata_qnorm <- stats::qnorm(pmax(pmin(e_newdata, 0.999), 0.001))
+    }
+
+    # Scale covariates
+    x_scaled <- as.matrix(x[, scale_vars, drop = FALSE])
+    x_scaled <- scale(x_scaled, center = scaled_center[scale_vars],
+                      scale = scaled_scale[scale_vars])
+
+    # Add propensity
+    x_scaled <- cbind(x_scaled, e = e_newdata_qnorm)
+
+    # Extract trees for this (iteration, chain) combination
+    trees_s <- trees[trees$iteration == iter & trees$chain == ch, ]
+
+    # Predict y0co
+    trees_y0 <- trees_s[trees_s$m == "y0co", ]
+    y0 <- predict_one_sample(trees_y0, x_scaled)
+
+    # Predict y1co
+    trees_y1 <- trees_s[trees_s$m == "y1co", ]
+    y1 <- predict_one_sample(trees_y1, x_scaled)
+
+    list(y0 = y0, y1 = y1, iter_idx = iter_idx, chain_idx = chain_idx)
+  }
+
+  # Total number of (iteration, chain) combinations
+  n_total <- n_iter * n_ch
+
+  if (n_cores > 1) {
+    # Use future for cross-platform parallelization
+    old_plan <- future::plan()
+    if (inherits(old_plan, "sequential")) {
+      future::plan(future::multisession, workers = n_cores)
+      on.exit(future::plan(old_plan), add = TRUE)
+    }
+    
+    # Increase globals size limit for large tree objects
+    old_max_size <- getOption("future.globals.maxSize")
+    options(future.globals.maxSize = 2 * 1024^3)  # 2 GiB
+    on.exit(options(future.globals.maxSize = old_max_size), add = TRUE)
+    
+    pred_list <- future.apply::future_lapply(
+      seq_len(n_total),
+      pred_fun,
+      future.seed = TRUE
+    )
+  } else {
+    pred_list <- lapply(seq_len(n_total), pred_fun)
+  }
+
+  # Combine into 3D arrays: [units, iterations, chains]
+  y0_array <- array(NA_real_, dim = c(n_new, n_iter, n_ch))
+  y1_array <- array(NA_real_, dim = c(n_new, n_iter, n_ch))
+  
+  for (res in pred_list) {
+    y0_array[, res$iter_idx, res$chain_idx] <- res$y0
+    y1_array[, res$iter_idx, res$chain_idx] <- res$y1
+  }
+
+  list(
+    y0 = y0_array,
+    y1 = y1_array
+  )
+}
+
+
+# Helper: predict from one sample's trees
+predict_one_sample <- function(trees, x) {
+  trees <- as.data.frame(trees)
+  n_trees <- max(trees$tree)
+
+  preds <- sapply(seq_len(n_trees), function(i) {
+    get_predictions_for_tree(trees[trees$tree == i, ], x)
+  })
+
+  stats::pnorm(rowSums(preds))
+}
+
+
+# -----------------------------------------------------------------------------
+# Helper: Compute generalizability overlap s = P(complier|X) * P(in_source|X)
+# -----------------------------------------------------------------------------
+#' Compute Generalizability Overlap
+#'
+#' Estimates the selection score s = P(complier|X, in_source) * P(in_source|X)
+#' for assessing generalizability from source study to external population.
+#' Missing covariates are single-imputed using BART mean predictions.
+#'
+#' @param princebart_fit A fitted \code{princebart} object with saved trees.
+#' @param newdata External population data. Covariates missing from source model
+#'   will be auto-detected and single-imputed using BART.
+#' @param weights Survey weights for external data.
+#' @param verbose Print progress.
+#'
+#' @return A list with:
+#'   \itemize{
+#'     \item \code{pi_c}: P(complier|X, in_source) for each external unit
+#'     \item \code{pi_t}: P(in_source|X) for each external unit
+#'     \item \code{pi_s}: Selection score s = pi_c * pi_t
+#'     \item \code{e_s_tilde}: Standardized selection score (logit, then z-score)
+#'     \item \code{e_s_tilde_source}: Standardized scores for source sample
+#'   }
+#'
+#' @export
+compute_generalizability_overlap <- function(
+  princebart_fit,
+  newdata,
+  weights = NULL,
+  verbose = FALSE
+) {
+
+  source_X <- princebart_fit$data$X
+  x_cols <- setdiff(colnames(source_X), "e")
+  n_source <- nrow(source_X)
+  n_new    <- nrow(newdata)
+
+  if (is.null(weights)) {
+    weights <- rep(1, n_new)
+  }
+
+  # Get scaling parameters - check for new format ($scaling) vs old format (attributes)
+  if (!is.null(princebart_fit$scaling)) {
+    # New format: X is stored unscaled, scaling in separate slot
+    scaled_center <- princebart_fit$scaling$center
+    scaled_scale  <- princebart_fit$scaling$scale
+    source_X_unscaled <- as.data.frame(source_X[, x_cols, drop = FALSE])
+  } else {
+    # Old format: X is stored scaled, scaling in attributes - need to unscale
+    scaled_center <- attr(source_X, "scaled:center")
+    scaled_scale <- attr(source_X, "scaled:scale")
+
+    source_X_unscaled <- as.matrix(source_X[, x_cols, drop = FALSE])
+    if (!is.null(scaled_scale) && !is.null(scaled_center)) {
+      for (j in seq_along(x_cols)) {
+        v <- x_cols[j]
+        if (v %in% names(scaled_center) && v %in% names(scaled_scale)) {
+          source_X_unscaled[, j] <- source_X_unscaled[, j] * scaled_scale[v] + scaled_center[v]
+        }
+      }
+    }
+    source_X_unscaled <- as.data.frame(source_X_unscaled)
+  }
+  colnames(source_X_unscaled) <- x_cols
+
+  # Fallback if no scaling info
+  if (is.null(scaled_center) || is.null(scaled_scale)) {
+    scaled_center <- colMeans(source_X_unscaled)
+    scaled_scale <- apply(source_X_unscaled, 2, stats::sd)
+  }
+
+  # Auto-detect missing covariates
+  missing_cols <- setdiff(x_cols, colnames(newdata))
+
+  # Single-impute if newdata is incomplete
+  if (length(missing_cols) > 0) {
+    if (verbose) message("  Single-imputing missing covariates: "
+      , paste(missing_cols, collapse = ", ")
+    )
+
+    common_cols <- intersect(x_cols, colnames(newdata))
+
+    for (v in missing_cols) {
+      # Use unscaled source data for imputation
+      x_train <- source_X_unscaled[, common_cols, drop = FALSE]
+      y_train <- source_X_unscaled[[v]]
+
+      is_binary <- all(y_train %in% c(0, 1))
+
+      mi_fit <- dbarts::bart2(
+        x_train, y_train,
+        newdata[, common_cols, drop = FALSE],
+        verbose = FALSE
+      )
+
+      # yhat.test may be 3D (chains x samples x units) or 2D (samples x units)
+      # Average over all posterior draws to get single imputation per unit
+      yhat <- mi_fit$yhat.test
+      if (length(dim(yhat)) == 3) {
+        # 3D: chains x samples x units -> average over chains and samples
+        if (is_binary) {
+          newdata[[v]] <- apply(stats::pnorm(yhat), 3, mean)
+        } else {
+          newdata[[v]] <- apply(yhat, 3, mean)
+        }
+      } else {
+        # 2D: samples x units -> colMeans
+        if (is_binary) {
+          newdata[[v]] <- colMeans(stats::pnorm(yhat))
+        } else {
+          newdata[[v]] <- colMeans(yhat)
+        }
+      }
+    }
+  }
+
+  # Now newdata has all x_cols - stack for P(in_source|X) in original scale
+  stacked_data <- rbind(
+    data.frame(source_X_unscaled[, x_cols, drop = FALSE], source = 1),
+    data.frame(newdata[, x_cols, drop = FALSE], source = 0)
+  )
+
+  if (verbose) message("  Fitting P(in_source|X)...")
+
+  # Fit P(in_source|X) using all covariates
+  pi_t_bart <- dbarts::bart2(
+    stacked_data[, x_cols, drop = FALSE],
+    stacked_data$source,
+    verbose = FALSE
+  )
+
+  pi_t_all <- stats::fitted(pi_t_bart)
+  pi_t_source <- pi_t_all[seq_len(n_source)]
+  pi_t_new <- pi_t_all[seq(n_source + 1, n_source + n_new)]
+
+  if (verbose) message("  Predicting P(complier|X, in_source)...")
+
+  # Predict P(complier|X) using "co" trees
+  trees <- as.data.frame(princebart_fit$trees)
+  trees_co <- trees[trees$m == "co", ]
+
+  # Use stored scaling parameters if available, otherwise compute from unscaled
+  if (is.null(scaled_center) || is.null(scaled_scale)) {
+    scaled_center <- colMeans(source_X_unscaled)
+    scaled_scale <- apply(source_X_unscaled, 2, stats::sd)
+  }
+
+  # Fit instrument propensity e = P(Z|X) using unscaled covariates
+  source_Z <- princebart_fit$data$Z
+  if (verbose) message("  Fitting P(Z|X)...")
+
+  propensity_bart <- dbarts::bart2(
+    source_X_unscaled[, x_cols, drop = FALSE],
+    source_Z,
+    keepTrees = TRUE,
+    verbose = FALSE
+  )
+
+  # Predict propensity for external data (now complete)
+  # predict() returns matrix: rows = posterior samples, columns = units
+  e_new <- colMeans(stats::pnorm(
+    stats::predict(propensity_bart, newdata = newdata[, x_cols, drop = FALSE])
+  ))
+  e_new <- pmax(pmin(e_new, 0.999), 0.001)
+
+  # Scale covariates for tree prediction (trees expect scaled X)
+  # Use stored scaling parameters
+  x_scaled_new <- as.matrix(newdata[, x_cols, drop = FALSE])
+  x_scaled_new <- scale(x_scaled_new,
+                        center = scaled_center,
+                        scale = scaled_scale)
+  x_scaled_new <- cbind(x_scaled_new, e = stats::qnorm(e_new))
+  
+  # source_X is already scaled, just use it directly with its e column
+  source_x_scaled <- as.matrix(source_X[, x_cols, drop = FALSE])
+  source_x_scaled <- cbind(source_x_scaled, e = source_X[, "e"])
+
+  # Predict pi_c for external data (average over samples)
+  samples <- unique(trees_co$iteration)
+  pi_c_mat <- sapply(samples, function(s) {
+    trees_s <- trees_co[trees_co$iteration == s, ]
+    predict_one_sample(trees_s, x_scaled_new)
+  })
+  pi_c_new <- rowMeans(pi_c_mat)
+
+  # Predict pi_c for source data
+  pi_c_source_mat <- sapply(samples, function(s) {
+    trees_s <- trees_co[trees_co$iteration == s, ]
+    predict_one_sample(trees_s, source_x_scaled)
+  })
+  pi_c_source <- rowMeans(pi_c_source_mat)
+
+  # Compute selection scores
+  pi_s_new <- pi_c_new * pi_t_new
+  pi_s_source <- pi_c_source * pi_t_source
+
+  # Standardize using source distribution (weighted)
+  source_wt <- rep(1, n_source)  # Source weights if available
+  e_s_source <- stats::qlogis(pmax(pmin(pi_s_source, 0.999), 0.001))
+  e_s_new <- stats::qlogis(pmax(pmin(pi_s_new, 0.999), 0.001))
+
+  m <- stats::weighted.mean(e_s_source, source_wt, na.rm = TRUE)
+  m2 <- stats::weighted.mean(e_s_source^2, source_wt, na.rm = TRUE)
+  s <- sqrt(m2 - m^2)
+
+  e_s_tilde_source <- (e_s_source - m) / s
+  e_s_tilde_new <- (e_s_new - m) / s
+
+  list(
+    pi_c = pi_c_new,
+    pi_t = pi_t_new,
+    pi_s = pi_s_new,
+    e_s_tilde = e_s_tilde_new,
+    e_s_tilde_source = e_s_tilde_source
+  )
+}
+
+
+# -----------------------------------------------------------------------------
+# Helper: Survey-weighted PATE with Bayesian bootstrap
+# -----------------------------------------------------------------------------
+
+#' Bayesian Bootstrap for Dirichlet weights
+#' @keywords internal
+bayesian_bootstrap <- function(n) {
+  u <- stats::runif(n - 1)
+  diff(c(0, sort(u), 1))
+}
+
+
+survey_pate <- function(tau, subpop, psu, weights, seed = NULL) {
+  tau <- as.matrix(tau)
+  tau[!subpop, ] <- NA
+
+  n_psu <- length(unique(psu))
+  n_draws <- ncol(tau)
+
+  # PSU-level weights (mean within PSU)
+  p_c <- tapply(weights, psu, mean)
+  n_c <- tapply(!is.na(psu), psu, sum)
+
+  if (!is.null(seed)) set.seed(seed)
+  bb_list <- lapply(seq_len(n_draws), function(r) bayesian_bootstrap(n_psu))
+
+  # Compute weighted mean for each posterior draw
+  pate_draws <- sapply(seq_len(n_draws), function(k) {
+    psu_tau <- tapply(tau[, k], psu, mean, na.rm = TRUE)
+    stats::weighted.mean(psu_tau, bb_list[[k]] * p_c * n_c, na.rm = TRUE)
+  })
+
+  list(
+    estimate = mean(pate_draws, na.rm = TRUE),
+    sd = stats::sd(pate_draws, na.rm = TRUE),
+    ci = stats::quantile(pate_draws, c(0.025, 0.975), na.rm = TRUE),
+    draws = pate_draws
+  )
+}
+
+
+# -----------------------------------------------------------------------------
+# Helper: Sensitivity analysis for confounding (weight-shift bounds)
+# -----------------------------------------------------------------------------
+sensitivity_analysis <- function(tau, subpop, psu, weights, gamma, seed = NULL) {
+
+  # Sample subset of draws for computational efficiency
+  n_draws <- ncol(tau)
+  n_sample <- min(n_draws, 100)
+
+  if (!is.null(seed)) set.seed(seed)
+  sample_idx <- sample(n_draws, n_sample)
+  tau_sample <- tau[, sample_idx, drop = FALSE]
+
+  # Find lower bound (inf)
+  lower <- compute_shift_pate(
+    tau = tau_sample,
+    subpop = subpop,
+    psu = psu,
+    weights = weights,
+    gamma = gamma,
+    inf = TRUE,
+    seed = seed
+  )
+
+  # Find upper bound (sup)
+  upper <- compute_shift_pate(
+    tau = tau_sample,
+    subpop = subpop,
+    psu = psu,
+    weights = weights,
+    gamma = gamma,
+    inf = FALSE,
+    seed = seed
+  )
+
+  list(
+    gamma = gamma,
+    lower = lower,
+    upper = upper
+  )
+}
+
+
+compute_shift_pate <- function(tau, subpop, psu, weights, gamma, inf, seed = NULL) {
+  tau <- as.matrix(tau)
+  tau[!subpop, ] <- NA
+  n_draws <- ncol(tau)
+
+  n_psu <- length(unique(psu))
+  p_c <- tapply(weights, psu, mean)
+  n_c <- tapply(!is.na(psu), psu, sum)
+
+  if (!is.null(seed)) set.seed(seed)
+  bb_list <- lapply(seq_len(n_draws), function(r) bayesian_bootstrap(n_psu))
+
+  pate_draws <- sapply(seq_len(n_draws), function(k) {
+    y <- tau[, k]
+    shift_wts <- find_shift_weights(inf = inf, gamma = gamma, y = y, wts = weights)
+    psu_tau <- tapply(y * shift_wts, psu, mean, na.rm = TRUE)
+    stats::weighted.mean(psu_tau, bb_list[[k]] * p_c * n_c, na.rm = TRUE)
+  })
+
+  list(
+    estimate = mean(pate_draws, na.rm = TRUE),
+    sd = stats::sd(pate_draws, na.rm = TRUE),
+    ci = stats::quantile(pate_draws, c(0.025, 0.975), na.rm = TRUE)
+  )
+}
+
+
+#' Find optimal weight shift for sensitivity bounds
+#' @keywords internal
+find_shift_weights <- function(inf, gamma, y, wts = NULL) {
+  if (!requireNamespace("CVXR", quietly = TRUE)) {
+    warning("CVXR not available, returning uniform weights")
+    return(rep(1, length(y)))
+  }
+
+  if (is.null(wts)) wts <- rep(1, length(y))
+
+  new_wts <- rep(0, length(y))
+  s <- !is.na(y)
+
+  wts_s <- as.numeric(wts)[s]
+  sum_wts <- sum(wts_s)
+  wts_s <- wts_s / sum(wts_s)
+  y_s <- y[s]
+  n <- sum(s)
+
+  r <- CVXR::Variable(n)
+
+  if (inf) {
+    objective <- CVXR::Minimize(sum(y_s * wts_s * r))
+  } else {
+    objective <- CVXR::Maximize(sum(y_s * wts_s * r))
+  }
+
+  constraints <- list(
+    sum(wts_s * r) == 1,
+    r <= gamma,
+    r >= 1 / gamma
+  )
+
+  problem <- CVXR::Problem(objective, constraints = constraints)
+  result <- CVXR::solve(problem, solver = "ECOS")
+
+  if (result$status != "optimal") {
+    warning("Optimization did not converge, returning uniform weights")
+    return(rep(1, length(y)))
+  }
+
+  r_val <- round(result$getValue(r), 4)
+  new_wts[s] <- wts_s * r_val * sum_wts
+  new_wts
+}
+
+
+# -----------------------------------------------------------------------------
+# Sensitivity Function: Overlap Analysis
+# -----------------------------------------------------------------------------
+
+#' Generalizability Overlap Analysis for PATE Estimates
+#'
+#' Compute generalizability overlap scores and optionally trim observations
+#' with low overlap to produce a trimmed PATE estimate.
+#'
+#' @param object A `general_pate` object from [general_BART()]
+#' @param threshold Numeric threshold for trimming based on standardized
+#'   selection scores. Observations with `|e_s_tilde| > threshold` are
+#'   excluded. Default is NULL (no trimming, just compute overlap).
+#' @param overlap_value Value to replace `tau` with for trimmed observations.
+#'   Either `"zero"` (set to 0) or `"NA"` (exclude completely). Default is `"zero"`.
+#' @param verbose Logical; print progress messages. Default is FALSE.
+#'
+#' @return A list with components:
+#' \describe{
+#'   \item{overlap}{Data frame with overlap metrics: pi_c, pi_t, pi_s, e_s_tilde}
+#'   \item{e_s_tilde_source}{Standardized selection scores for source data}
+#'   \item{n_trimmed}{Number of observations trimmed (if threshold used)}
+#'   \item{pate_trimmed}{Trimmed PATE estimate (if threshold used)}
+#'   \item{ci_trimmed}{95 percent CI for trimmed PATE (if threshold used)}
+#' }
+#'
+#' @seealso [general_BART()], [general_BART_transportability()]
+#'
+#' @examples
+#' \dontrun{
+#' fit <- general_BART(princebart_fit, newdata, ...)
+#' overlap <- general_BART_overlap(fit, threshold = 2)
+#' }
+#'
+#' @export
+general_BART_overlap <- function(
+    object,
+    threshold = NULL,
+    overlap_value = c("zero", "NA"),
+    verbose = FALSE
+) {
+  if (!inherits(object, "general_pate")) {
+    stop("object must be a 'general_pate' object from general_BART()")
+  }
+
+  overlap_value <- match.arg(overlap_value)
+
+  if (verbose) message("Computing generalizability overlap...")
+
+  # Use stored data from general_pate object
+  newdata <- object$newdata
+  source_X <- object$source_X
+  source_Z <- object$source_Z
+  trees <- object$trees
+  scaled_center <- object$scaled_center
+  scaled_scale <- object$scaled_scale
+  # weights <- object$weights # removed unused variable
+
+  x_cols <- setdiff(colnames(source_X), "e")
+  n_source <- nrow(source_X)
+  n_new <- nrow(newdata)
+
+  # source_X is now stored unscaled (new format) or may need unscaling (old format)
+  # Check by seeing if values look scaled (centered near 0) vs original scale
+  # For backwards compatibility, check if scaling params exist and X looks scaled
+  source_X_unscaled <- as.data.frame(source_X[, x_cols, drop = FALSE])
+  
+  # Heuristic: if X values are mostly between -5 and 5, likely scaled
+  x_range <- range(as.matrix(source_X_unscaled), na.rm = TRUE)
+  likely_scaled <- !is.null(scaled_center) && !is.null(scaled_scale) && 
+                   x_range[1] > -10 && x_range[2] < 10 && 
+                   abs(mean(as.matrix(source_X_unscaled))) < 1
+  
+  if (likely_scaled) {
+    # Old format: need to unscale
+    source_X_unscaled <- as.matrix(source_X_unscaled)
+    for (j in seq_along(x_cols)) {
+      v <- x_cols[j]
+      if (v %in% names(scaled_center) && v %in% names(scaled_scale)) {
+        source_X_unscaled[, j] <- source_X_unscaled[, j] * scaled_scale[v] + scaled_center[v]
+      }
+    }
+    source_X_unscaled <- as.data.frame(source_X_unscaled)
+  }
+  colnames(source_X_unscaled) <- x_cols
+
+  # Auto-detect and single-impute missing covariates
+  missing_cols <- setdiff(x_cols, colnames(newdata))
+
+  if (length(missing_cols) > 0) {
+    if (verbose) message("  Single-imputing missing covariates: ",
+                         paste(missing_cols, collapse = ", "))
+
+    common_cols <- intersect(x_cols, colnames(newdata))
+
+    for (v in missing_cols) {
+      # Use unscaled source data for imputation model
+      x_train <- source_X_unscaled[, common_cols, drop = FALSE]
+      y_train <- source_X_unscaled[[v]]
+
+      is_binary <- all(y_train %in% c(0, 1))
+
+      mi_fit <- dbarts::bart2(
+        x_train, y_train,
+        newdata[, common_cols, drop = FALSE],
+        verbose = FALSE
+      )
+
+      yhat <- mi_fit$yhat.test
+      if (length(dim(yhat)) == 3) {
+        if (is_binary) {
+          newdata[[v]] <- apply(stats::pnorm(yhat), 3, mean)
+        } else {
+          newdata[[v]] <- apply(yhat, 3, mean)
+        }
+      } else {
+        if (is_binary) {
+          newdata[[v]] <- colMeans(stats::pnorm(yhat))
+        } else {
+          newdata[[v]] <- colMeans(yhat)
+        }
+      }
+    }
+  }
+
+  # Stack source and target for P(in_source|X) - both in original scale
+  stacked_data <- rbind(
+    data.frame(source_X_unscaled[, x_cols, drop = FALSE], source = 1),
+    data.frame(newdata[, x_cols, drop = FALSE], source = 0)
+  )
+
+  if (verbose) message("  Fitting P(in_source|X)...")
+
+  pi_t_bart <- dbarts::bart2(
+    stacked_data[, x_cols, drop = FALSE],
+    stacked_data$source,
+    verbose = FALSE
+  )
+
+  pi_t_all <- stats::fitted(pi_t_bart)
+  pi_t_source <- pi_t_all[seq_len(n_source)]
+  pi_t_new <- pi_t_all[seq(n_source + 1, n_source + n_new)]
+
+  if (verbose) message("  Predicting P(complier|X, in_source)...")
+
+  # Predict P(complier|X) using "co" trees
+  trees_df <- as.data.frame(trees)
+  trees_co <- trees_df[trees_df$m == "co", ]
+
+  # Fit propensity P(Z|X) using unscaled source data
+  if (verbose) message("  Fitting P(Z|X)...")
+
+  propensity_bart <- dbarts::bart2(
+    source_X_unscaled[, x_cols, drop = FALSE],
+    source_Z,
+    keepTrees = TRUE,
+    verbose = FALSE
+  )
+
+  e_new <- colMeans(stats::pnorm(
+    stats::predict(propensity_bart, newdata = newdata[, x_cols, drop = FALSE])
+  ))
+  e_new <- pmax(pmin(e_new, 0.999), 0.001)
+
+  # Scale covariates for tree prediction
+  x_scaled_new <- as.matrix(newdata[, x_cols, drop = FALSE])
+  x_scaled_new <- scale(x_scaled_new, center = scaled_center, scale = scaled_scale)
+  x_scaled_new <- cbind(x_scaled_new, e = stats::qnorm(e_new))
+
+  source_x_scaled <- as.matrix(source_X[, x_cols, drop = FALSE])
+  source_x_scaled <- scale(source_x_scaled, center = scaled_center, scale = scaled_scale)
+  source_x_scaled <- cbind(source_x_scaled, e = source_X[, "e"])
+
+  # Predict pi_c for external and source data
+  samples <- unique(trees_co$iteration)
+  pi_c_mat <- sapply(samples, function(s) {
+    trees_s <- trees_co[trees_co$iteration == s, ]
+    predict_one_sample(trees_s, x_scaled_new)
+  })
+  pi_c_new <- rowMeans(pi_c_mat)
+
+  pi_c_source_mat <- sapply(samples, function(s) {
+    trees_s <- trees_co[trees_co$iteration == s, ]
+    predict_one_sample(trees_s, source_x_scaled)
+  })
+  pi_c_source <- rowMeans(pi_c_source_mat)
+
+  # Compute selection scores
+  pi_s_new <- pi_c_new * pi_t_new
+  pi_s_source <- pi_c_source * pi_t_source
+
+  # Standardize using source distribution
+  e_s_source <- stats::qlogis(pmax(pmin(pi_s_source, 0.999), 0.001))
+  e_s_new <- stats::qlogis(pmax(pmin(pi_s_new, 0.999), 0.001))
+
+  m <- mean(e_s_source, na.rm = TRUE)
+  s <- stats::sd(e_s_source, na.rm = TRUE)
+
+  e_s_tilde_source <- (e_s_source - m) / s
+  e_s_tilde_new <- (e_s_new - m) / s
+
+  overlap_df <- data.frame(
+    pi_c = pi_c_new,
+    pi_t = pi_t_new,
+    pi_s = pi_s_new,
+    e_s_tilde = e_s_tilde_new
+  )
+
+  result <- list(
+    overlap = overlap_df,
+    e_s_tilde_source = e_s_tilde_source,
+    n_trimmed = 0,
+    pate_trimmed = NULL,
+    ci_trimmed = NULL
+  )
+
+  # Apply trimming if threshold specified
+
+  if (!is.null(threshold)) {
+    if (verbose) message("  Applying overlap trimming (threshold = ", threshold, ")...")
+
+    trim_mask <- abs(e_s_tilde_new) > threshold
+    n_trimmed <- sum(trim_mask)
+
+    if (verbose) message("  Trimmed ", n_trimmed, " of ", n_new, " observations")
+
+    # Get tau from object and apply trimming
+    tau <- object$tau
+    n_iter <- dim(tau)[2]
+    n_ch <- dim(tau)[3]
+    tau_2d <- matrix(tau, nrow = n_new, ncol = n_iter * n_ch)
+
+    if (overlap_value == "zero") {
+      tau_2d[trim_mask, ] <- 0
+    } else {
+      tau_2d[trim_mask, ] <- NA
+    }
+
+    # Recompute PATE with trimmed tau
+    pate_trimmed <- survey_pate(
+      tau = tau_2d,
+      subpop = object$subpop,
+      psu = object$psu,
+      weights = object$weights,
+      seed = object$seed
+    )
+
+    result$n_trimmed <- n_trimmed
+    result$pate_trimmed <- pate_trimmed$estimate
+    result$ci_trimmed <- pate_trimmed$ci
+    result$sd_trimmed <- pate_trimmed$sd
+    result$draws_trimmed <- pate_trimmed$draws
+  }
+
+  if (verbose) message("Done.")
+  result
+}
+
+
+# -----------------------------------------------------------------------------
+# Sensitivity Function: Weight-Shift Bounds
+# -----------------------------------------------------------------------------
+
+#' Sensitivity Analysis for Unmeasured Confounding
+#'
+#' Compute sensitivity bounds for the PATE estimate under potential
+#' unmeasured confounding using weight-shift optimization.
+#'
+#' @param object A `general_pate` object from [general_BART()]
+#' @param gamma Numeric sensitivity parameter > 1. Represents the maximum
+#'   ratio by which observation weights can be shifted. Larger values allow
+#'   more severe confounding.
+#' @param n_sample Number of posterior draws to use for sensitivity analysis.
+#'   Default is 100.
+#' @param verbose Logical; print progress messages. Default is FALSE.
+#'
+#' @return A list with components:
+#' \describe{
+#'   \item{gamma}{The sensitivity parameter used}
+#'   \item{lower}{Lower bound estimate with CI}
+#'   \item{upper}{Upper bound estimate with CI}
+#' }
+#'
+#' @details
+#' The sensitivity analysis follows the weight-shift framework where
+#' observation weights can be multiplied by a factor between 1/gamma and
+#' gamma. The lower and upper bounds represent the extremes of the PATE
+#' estimate under this weight perturbation.
+#'
+#' Requires the CVXR package for optimization.
+#'
+#' @seealso [general_BART()], [general_BART_overlap()]
+#'
+#' @examples
+#' \dontrun{
+#' fit <- general_BART(princebart_fit, newdata, ...)
+#' sens <- general_BART_transportability(fit, gamma = 1.5)
+#' }
+#'
+#' @export
+general_BART_transportability <- function(
+    object,
+    gamma,
+    n_sample = 100,
+    verbose = FALSE
+) {
+  if (!inherits(object, "general_pate")) {
+    stop("object must be a 'general_pate' object from general_BART()")
+  }
+
+  if (!is.numeric(gamma) || gamma <= 1) {
+    stop("gamma must be numeric and > 1")
+  }
+
+  if (!requireNamespace("CVXR", quietly = TRUE)) {
+    stop("Package 'CVXR' is required for sensitivity analysis")
+  }
+
+  if (verbose) message("Running sensitivity analysis (gamma = ", gamma, ")...")
+
+  # Get tau from object
+  tau <- object$tau
+  n_new <- dim(tau)[1]
+  n_iter <- dim(tau)[2]
+  n_ch <- dim(tau)[3]
+  tau_2d <- matrix(tau, nrow = n_new, ncol = n_iter * n_ch)
+
+  # Sample subset of draws for computational efficiency
+  n_draws <- ncol(tau_2d)
+  n_sample <- min(n_draws, n_sample)
+
+  set.seed(object$seed)
+  sample_idx <- sample(n_draws, n_sample)
+  tau_sample <- tau_2d[, sample_idx, drop = FALSE]
+
+  if (verbose) message("  Computing lower bound...")
+
+  # Find lower bound (inf)
+  lower <- compute_shift_pate(
+    tau = tau_sample,
+    subpop = object$subpop,
+    psu = object$psu,
+    weights = object$weights,
+    gamma = gamma,
+    inf = TRUE,
+    seed = object$seed
+  )
+
+  if (verbose) message("  Computing upper bound...")
+
+  # Find upper bound (sup)
+  upper <- compute_shift_pate(
+    tau = tau_sample,
+    subpop = object$subpop,
+    psu = object$psu,
+    weights = object$weights,
+    gamma = gamma,
+    inf = FALSE,
+    seed = object$seed
+  )
+
+  result <- list(
+    gamma = gamma,
+    lower = lower,
+    upper = upper
+  )
+
+  if (verbose) message("Done.")
+  result
+}
+
+
+# -----------------------------------------------------------------------------
+# S3 Methods for general_pate class
+# -----------------------------------------------------------------------------
+
+#' @export
+print.general_pate <- function(x, ...) {
+  cat("General BART PATE Estimate\n")
+  cat("==========================\n")
+  cat("PATE:    ", round(x$pate, 4), "\n")
+  cat("95% CI:  [", round(x$ci[1], 4), ", ", round(x$ci[2], 4), "]\n", sep = "")
+  cat("SD:      ", round(x$sd, 4), "\n")
+  cat("N (subpop):", x$n_obs, "\n")
+
+  cat("\nUse general_BART_overlap() for overlap analysis")
+  cat("\nUse general_BART_transportability() for sensitivity analysis\n")
+
+  invisible(x)
+}
+
+
+#' @export
+summary.general_pate <- function(object, ...) {
+  cat("General BART PATE Summary\n")
+  cat("=========================\n\n")
+
+  cat("Treatment Effect Estimate:\n")
+  cat("  PATE:          ", round(object$pate, 4), "\n")
+  cat("  Posterior SD:  ", round(object$sd, 4), "\n")
+  cat("  95% CI:        [", round(object$ci[1], 4), ", ",
+      round(object$ci[2], 4), "]\n", sep = "")
+  cat("  N (subpop):    ", object$n_obs, "\n\n")
+
+  cat("For sensitivity analyses, use:\n")
+  cat("  general_BART_overlap(object)      - Generalizability overlap\n")
+  cat("  general_BART_transportability(object)  - Weight-shift bounds\n")
+
+  invisible(object)
+}
+
+
+#' Plot overlap diagnostics
+#'
+#' @param x Output from [general_BART_overlap()]
+#' @param ... Additional arguments (ignored)
+#'
+#' @export
+plot_overlap <- function(x, ...) {
+  if (!is.list(x) || is.null(x$overlap) || is.null(x$e_s_tilde_source)) {
+    stop("x must be output from general_BART_overlap()")
+  }
+
+  oldpar <- graphics::par(no.readonly = TRUE)
+  on.exit(graphics::par(oldpar))
+
+  graphics::par(mfrow = c(1, 1), mar = c(5, 4, 4, 2) + 0.1)
+
+  # Density plot of selection scores
+  e_source <- x$e_s_tilde_source
+  e_target <- x$overlap$e_s_tilde
+
+  xlim <- range(c(e_source, e_target), na.rm = TRUE)
+
+  d_source <- stats::density(e_source, na.rm = TRUE)
+  d_target <- stats::density(e_target, na.rm = TRUE)
+
+  graphics::plot(d_source, xlim = xlim,
+                 main = "Generalizability Overlap",
+                 xlab = "Standardized Selection Score",
+                 ylab = "Density",
+                 col = "blue", lwd = 2)
+  graphics::lines(d_target, col = "red", lwd = 2, lty = 2)
+  graphics::legend("topright",
+                   legend = c("Source (compliers)", "Target population"),
+                   col = c("blue", "red"),
+                   lty = c(1, 2), lwd = 2)
+
+  invisible(x)
+}

@@ -3,3 +3,5 @@
 *.html
 /output
 analyses/misc.rmd
+/doc/
+/Meta/

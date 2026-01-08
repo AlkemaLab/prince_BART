@@ -1,36 +1,49 @@
 cff-version: 1.2.0
-title: >-
-  Prince BART: Software in R to combine BART and Principal
-  Stratification to estimate the effect of intermediate on
-  primary outcomes.
-message: >-
-  If you use this software, please cite it using the
-  metadata from this file.
+
+title: >
+  princeBART: An R Package for Principal Stratification with
+  Bayesian Additive Regression Trees
+
+message: >
+  If you use this software, please cite it using the metadata
+  from this file.
+
 type: software
+
 authors:
   - given-names: Lucas
     family-names: Godoy Garraza
-    orcid: 'https://orcid.org/0000-0001-8426-9485'
+    orcid: https://orcid.org/0000-0001-8426-9485
   - given-names: Leontine
     family-names: Alkema
-repository-code: 'https://github.com/AlkemaLab/prince_BART'
-identifier: 
+
+repository-code: https://github.com/AlkemaLab/prince_BART
+
+identifiers:
   - type: doi
-    value: '10.5281/zenodo.13310559'
-abstract: >-
-  Code for the manuscript "Combining BART and Principal
-  Stratification to estimate the effect of intermediate on
-  primary outcomes with application to estimating the effect
-  of family planning on employment in sub-Saharan Africa".
-  The main code is on the “analysis” folder, with steps in
-  separate R Markdown files numbered sequentially. The data
-  and data documentation is available at
-  https://doi.org/10.15139/S3/BRLE7L (a copy of the file is
-  included here for convenience).
+    value: 10.5281/zenodo.13310559
+
+abstract: >
+  princeBART is an R package implementing Bayesian principal
+  stratification using Bayesian Additive Regression Trees (BART)
+  for causal inference with endogenous treatments. The package
+  is designed for instrumental variable and encouragement designs
+  with noncompliance, and provides estimation of complier-specific
+  causal effects, effect heterogeneity, and generalization to
+  external populations. The methodology is described in the
+  working paper "Combining BART and Principal Stratification to
+  estimate the effect of intermediate variables on primary
+  outcomes with application to estimating the effect of family
+  planning on employment in Nigeria and Senegal."
+
 keywords:
   - causal inference
   - principal stratification
   - instrumental variables
-  - Bayesian Additive Regression Trees (BART)
-version: '0.1.0'
-date-released: '2024-08-13'
+  - Bayesian Additive Regression Trees
+  - treatment effect heterogeneity
+  - transportability
+
+version: 0.1.0
+
+date-released: 2024-08-13

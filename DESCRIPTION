@@ -1,0 +1,52 @@
+Package: princeBART
+Title: Principal Stratification with Bayesian Additive Regression Trees
+Version: 0.1.0
+Authors@R: 
+    person(
+      given  = "Lucas",
+      family = "Godoy Garraza",
+      role   = c("aut", "cre"),
+      email  = "lgodoygarraz@umass.edu",
+      comment = c(ORCID = "0000-0001-8426-9485")
+    )
+Author: Lucas Godoy Garraza[aut, cre]
+Maintainer: Lucas Godoy Garraza <lgodoygarraz@umass.edu>
+Description: The princeBART package implements principal stratification with Bayesian
+ Additive Regression Trees (BART) for causal inference when treatment uptake
+ is endogenous and identification relies on an instrument that is as-good-as-
+ random conditional on covariates. It targets the average causal effect among
+ compliers (ATE_C, also known as the Local Average Treatment Effect, LATE),
+ as well as conditional complier effects given covariates (CATE_C(x)).
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Depends: 
+    R (>= 4.1.0)
+Imports:
+    dbarts,
+    posterior,
+    abind,
+    future,
+    future.apply,
+    Formula,
+    methods,
+    parallel,
+    partykit,
+    rpart,
+    CVXR
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    ivreg,
+    sandwich,
+    kappalate,
+    PStrata,
+    rstan,
+    matrixStats,
+    MASS,
+    ggplot2,
+    tidyverse
+Config/testthat/edition: 3
+VignetteBuilder: knitr

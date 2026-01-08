@@ -1,0 +1,14 @@
+## Installation
+
+```{r install}
+# From GitHub
+devtools::document()
+devtools::install()
+#devtools::install_github("yourusername/prince_BART")
+library(princeBART)
+
+saveRDS(overlap, "inst/extdata/overlap_result.rds")
+saveRDS(overlap_trimmed, "inst/extdata/overlap_trimmed_result.rds")
+saveRDS(sens, "inst/extdata/sensitivity_result.rds")
+saveRDS(sens_results, "inst/extdata/sensitivity_curve_results.rds")
+```
