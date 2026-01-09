@@ -71,10 +71,10 @@ browseVignettes("princeBART")
 ```
 
 **Available vignettes include:**
-- Introduction to princeBART (`doc/introduction.html`)
-- Estimation of complier effects and effect heterogeneity (`doc/simulation.html`)
-- Generalizing princeBART results to external populations (`doc/generalizing.html`)
-- Transportability, overlap diagnostics, and sensitivity analysis
+- [Introduction to princeBART](https://htmlpreview.github.io/?https://github.com/AlkemaLab/prince_BART/blob/main/doc/introduction.html)
+- [Estimation of complier effects and effect heterogeneity](https://htmlpreview.github.io/?https://github.com/AlkemaLab/prince_BART/blob/main/doc/simulation.html)
+- [Generalizing princeBART results to external populations, including diagnostics](https://htmlpreview.github.io/?https://github.com/AlkemaLab/prince_BART/blob/main/doc/generalizing.html)
+
 
 ---
 

@@ -1,0 +1,201 @@
+---
+title: "Introduction to princeBART"
+author: "princeBART authors"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to princeBART}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = TRUE,
+  fig.width = 8,
+  fig.height = 5,
+  out.width = "100%"
+)
+```
+
+## Overview
+ 
+princeBART implements **Principal Stratification with Bayesian Additive Regression Trees (BART)** for causal inference with endogenous treatments. It estimates treatment effects for compliers—units whose treatment status is affected by an instrument.
+
+While the canonical application is noncompliance in randomized experiments, the framework applies broadly to any setting with:
+
+- An **instrument Z** that affects treatment uptake but has no direct effect on outcomes
+- An **endogenous treatment W** whose causal effect on Y is of interest
+- **Covariates X** that may confound the Z-W or W-Y relationships
+
+
+
+## The Setup
+
+We observe:
+
+- **Z**: Instrument (e.g., randomized assignment, geographic variation, policy change)
+- **W**: Endogenous treatment/exposure of interest
+- **Y**: Outcome
+- **X**: Covariates
+
+### Key Assumptions
+
+1. **Conditional randomization**: $Z \perp\!\!\!\perp (Y(z,w), W(z)) | X$ — the instrument is as-good-as-random given covariates
+2. **Exclusion restriction**: Z affects Y only through W
+3. **Monotonicity**: No defiers (units for whom Z decreases W)
+
+### Principal Strata
+
+The population consists of three principal strata:
+
+| Stratum | W if Z=0 | W if Z=1 | 
+|---------|----------|----------|
+| Compliers | 0 | 1 |
+| Never-takers | 0 | 0 |
+| Always-takers | 1 | 1 |
+
+The key estimand is the **Complier Average Causal Effect (CACE)**, also known as the Local Average Treatment Effect (LATE)—the causal effect of W on Y for units whose treatment is affected by the instrument. princeBART also targets conditional complier effects given covariates, denoted CATE_C(x).
+
+## Simulated Example Data
+
+Let's create a simulated dataset with clear treatment effect heterogeneity
+to demonstrate \code{segment_heterogeneity()}.
+
+```{r simulate-data}
+library(princeBART)
+set.seed(42)
+n <- 800
+
+# Covariates
+X <- data.frame(
+  age = rnorm(n, 40, 10),
+  education = rnorm(n, 12, 3),
+  income = rnorm(n, 50000, 15000)
+)
+
+# Principal strata (latent)
+# Probability of being a complier depends on covariates
+p_complier <- plogis(-1.2 + 0.03 * X$age + 0.12 * X$education - 0.00001 * X$income)
+p_always   <- plogis(-2 + 0.01 * X$age)
+p_never    <- pmax(1 - p_complier - p_always, 0)
+denom <- p_complier + p_never + p_always
+p_complier <- p_complier / denom
+p_never <- p_never / denom
+p_always <- p_always / denom
+
+
+strata <- sapply(1:n, function(i) {
+  sample(c("complier", "never", "always"), 1,
+         prob = c(p_complier[i], p_never[i], p_always[i]))
+})
+
+# Instrument (randomized, possibly conditional on X)
+Z <- rbinom(n, 1, 0.5)
+
+# Treatment uptake depends on strata and instrument
+W <- Z
+W[strata == "always"] <- 1L
+W[strata == "never"]  <- 0L
+
+# Heterogeneous complier treatment effect
+tau <- 0.2 +
+  0.15 * (X$education > 12) -
+  0.10 * (X$age > 50) +
+  0.08 * (X$income > 60000)
+
+# Potential outcomes (only Y(W) is observed)
+lin0 <- -0.6 + 0.01 * X$age + 0.04 * X$education + 0.00001 * X$income
+Y0 <- plogis(lin0)
+Y1 <- plogis(lin0 + tau)
+
+Y <- rbinom(n, 1, ifelse(W == 1, Y1, Y0))
+
+# Combine into data frame
+simdata <- data.frame(X, Z = Z, W = W, Y = Y)
+
+# True ATE among compliers
+true_ate_c <- mean(tau[strata == "complier"])
+```
+
+## Basic Usage
+
+### Formula Interface
+
+princeBART uses a 2SLS-style formula: `Y ~ covariates | Z | W`
+
+```{r formula-usage, eval = FALSE}
+
+library(future)
+
+# Set up parallel backend (works on all platforms)
+plan(multisession, workers = 4)
+
+# Fit the model
+fit <- prince_BART(
+  Y ~ age + education + income | Z | W,
+  data = simdata,
+  n_chains = 2,
+  n_warmup = 100,
+  n_samples = 200,
+  instrument_overlap = c(0.1, 0.9),
+  keep_trees = TRUE  # Save trees for generalization
+)
+
+```
+
+
+
+## Extracting Treatment Effects
+
+princeBART provides average effects for compliers (LATE-like effects) via summary() and coef(). 
+These are mixed estimands—averages of conditional complier effects over the empirical covariate distribution—
+and can optionally be restricted to treated compliers (treated_only = TRUE).
+
+```{r estimands}
+fit <- readRDS(system.file("extdata", "fit_intro.rds", package = "princeBART"))
+
+# Print summary
+print(fit)
+
+# Summary shows strata distribution and treatment effect
+summary(fit)
+
+# Mixed ATE for Compliers (default)
+coef(fit)
+```
+
+## Effect Heterogeneity by Segments
+
+We can automatically find segments (subgroups) with different conditional complier
+effects using a shallow regression tree on posterior mean CATE_C(x).
+The segment-level summaries in res$effects correspond to subgroup-specific
+average effects among compliers, obtained by averaging conditional effects
+within each covariate-defined segment. Differences across segments highlight
+departures from effect homogeneity and provide an interpretable summary of
+treatment effect heterogeneity.
+```{r heterogeneity, fig.width=8, fig.height=5, out.width="100%"}
+res <- segment_heterogeneity(
+  fit,
+  min_compliers_bucket = 50,
+  plot = TRUE,
+  contrast = TRUE
+)
+
+res$contrast$summary
+res$plot$diff
+
+```
+
+The segment-level summaries in res$effects correspond to subgroup-specific
+average effects among compliers, obtained by averaging conditional effects
+within each covariate-defined segment. Differences across segments highlight
+departures from effect homogeneity and provide an interpretable summary of
+treatment effect heterogeneity. Segments are constructed post hoc to summarize 
+heterogeneity in the posterior distribution of CATE_C(x).
+```{r heterogeneity_effects, fig.width=8, fig.height=5, out.width="100%"}
+res$effects
+res$plot$effect
+```
