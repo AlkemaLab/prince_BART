@@ -63,17 +63,25 @@ coef(fit)
 
 ## Vignettes
 
-The package includes worked examples illustrating core functionality.  
-Browse vignettes with:
+
+- **[Introduction to princeBART](https://alkemalab.github.io/prince_BART/introduction.html)**  
+  Estimation of complier-specific causal effects and summaries of effect
+  heterogeneity.
+
+- **[Generalizing princeBART results to external populations](https://alkemalab.github.io/prince_BART/generalizing.html)**  
+  Transporting estimated effects to a target population using external data,
+  with overlap diagnostics and sensitivity analysis.
+
+- **[Simulation study](https://alkemalab.github.io/prince_BART/simulation.html)**  
+  Comparison of princeBART with standard estimators such as two-stage least
+  squares (2SLS) in simulated settings.
+
+After installation, vignettes can also be accessed in R via:
 
 ```r
 browseVignettes("princeBART")
 ```
 
-**Available vignettes include:**
-- [Introduction to princeBART](https://htmlpreview.github.io/?https://github.com/AlkemaLab/prince_BART/blob/main/doc/introduction.html)
-- [Estimation of complier effects and effect heterogeneity](https://htmlpreview.github.io/?https://github.com/AlkemaLab/prince_BART/blob/main/doc/simulation.html)
-- [Generalizing princeBART results to external populations, including diagnostics](https://htmlpreview.github.io/?https://github.com/AlkemaLab/prince_BART/blob/main/doc/generalizing.html)
 
 
 ---

@@ -235,12 +235,3 @@ abline(h = pate_result$pate, lty = 3)
 legend("topright", c("Upper", "Lower", "Null", "Point est."), 
        col = c("red", "blue", "black", "black"), lty = c(1, 1, 2, 3))
 ```
-
-
-
-
-## References
-
-- Ding, P., & Lu, J. (2017). Principal stratification analysis using principal scores. *Journal of the Royal Statistical Society: Series B*.
-- Chipman, H. A., George, E. I., & McCulloch, R. E. (2010). BART: Bayesian additive regression trees. *The Annals of Applied Statistics*.
-- Crump, R. K., Hotz, V. J., Imbens, G. W., & Mitnik, O. A. (2009). Dealing with limited overlap in estimation of average treatment effects. *Biometrika*.
