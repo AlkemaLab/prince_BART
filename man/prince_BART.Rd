@@ -45,7 +45,7 @@ internally using BART.}
 \item{instrument_overlap}{Optional bounds for instrument propensity trimming
 to enforce overlap. If provided as a length-2 vector (e.g., \code{c(0.1, 0.9)}),
 observations with estimated propensity scores outside this range are excluded.
-Default is NULL (no trimming). See Crump et al. (2009).}
+Default is NULL (no trimming).}
 
 \item{n_warmup}{Number of warmup iterations per chain (default: 1000).}
 

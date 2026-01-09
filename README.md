@@ -29,7 +29,7 @@ devtools::install_github("AlkemaLab/prince_BART")
 
 princeBART estimates causal effects when:
 - Treatment uptake is endogenous
-- Identification relies on an instrument
+- Identification relies on an instrument that may only be valid after controlling for observed covariates
 - Treatment effects may vary flexibly with covariates
 
 **Key features include:**

@@ -19,7 +19,7 @@
 #' @param instrument_overlap Optional bounds for instrument propensity trimming
 #'   to enforce overlap. If provided as a length-2 vector (e.g., \code{c(0.1, 0.9)}),
 #'   observations with estimated propensity scores outside this range are excluded.
-#'   Default is NULL (no trimming). See Crump et al. (2009).
+#'   Default is NULL (no trimming).
 #' @param n_chains Number of parallel MCMC chains (default: 4).
 #' @param n_warmup Number of warmup iterations per chain (default: 1000).
 #' @param n_samples Number of posterior samples per chain (default: 1000).

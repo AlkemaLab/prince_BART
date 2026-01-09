@@ -140,7 +140,7 @@ fit <- prince_BART(
   n_chains = 2,
   n_warmup = 100,
   n_samples = 200,
-  instrument_overlap = c(0.1, 0.9),  # Crump et al. (2009) recommendation
+  instrument_overlap = c(0.1, 0.9),
   keep_trees = TRUE  # Save trees for generalization
 )
 
