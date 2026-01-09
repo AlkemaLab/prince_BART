@@ -347,14 +347,46 @@ Estimators</h1>
 
 <div id="overview" class="section level2">
 <h2>Overview</h2>
-<p>This vignette reproduces the simulation study from the princeBART
-paper, comparing four estimators for the Local Average Treatment Effect
-(LATE) under noncompliance:</p>
-<p>2SLS: Two-stage least squares with robust standard errors κ-weighting
-(normalized): Kappa-weighting estimator PStrata: Bayesian principal
-stratification Prince BART: Principal stratification with BART (this
-package) The simulation uses 20 iterations for vignette building; the
-full paper uses 400.</p>
+<p>This vignette illustrates the finite-sample performance of
+<strong>princeBART</strong> in comparison with commonly used estimators
+for complier-specific causal effects (often termed LATE) under
+noncompliance or treatment uptake endogeneity.</p>
+<p>The goal of the simulation is not to provide an exhaustive
+evaluation, but to highlight how different estimators behave across
+data-generating processes that vary in complexity, overlap, and
+treatment effect heterogeneity. In particular, the simulation contrasts
+settings in which linear methods such as two-stage least squares (2SLS)
+are well specified with settings in which nonlinearities and
+heterogeneous effects are present.</p>
+<p>The results shown here are based on a reduced number of simulation
+iterations to keep vignette build times reasonable. The full simulation
+study, including additional designs and substantially more repetitions,
+is reported in the accompanying paper.</p>
+<p>The following estimators are compared:</p>
+<ul>
+<li><strong>2SLS</strong>: Two-stage least squares with robust standard
+errors<br />
+</li>
+<li><strong>κ-weighting</strong>: Normalized kappa-weighting
+estimator<br />
+</li>
+<li><strong>PStrata</strong>: Bayesian principal stratification<br />
+</li>
+<li><strong>Prince BART</strong>: Principal stratification with BART
+(this package)</li>
+</ul>
+</div>
+<div id="simulation-design" class="section level2">
+<h2>Simulation design</h2>
+<p>The data-generating processes considered here follow the simulation
+designs used in the princeBART paper and related methodological work.
+They are not constructed to favor princeBART, but instead represent
+settings previously used to evaluate instrumental variable estimators
+under noncompliance, varying in the degree of overlap, functional form,
+and treatment effect heterogeneity.</p>
+<p>The designs differ in how treatment uptake depends on covariates and
+the instrument, and in whether the complier treatment effect is constant
+or nonlinear in covariates.</p>
 </div>
 <div id="data-generating-process" class="section level2">
 <h2>Data Generating Process</h2>
@@ -892,7 +924,7 @@ more extreme propensity scores.</p>
 </div>
 <div id="interpretation" class="section level2">
 <h2>Interpretation</h2>
-<p>The simulation demonstrates that:</p>
+<p>The simulation illustrates that:</p>
 <ol style="list-style-type: decimal">
 <li><strong>PStrata</strong> performs better than <strong>2SLS</strong>
 in the linear case (Design A)</li>
@@ -901,19 +933,9 @@ in the linear case (Design A)</li>
 <li><strong>Prince BART</strong> outperforms <strong>2SLS</strong> in
 both scenarios, showing robustness to design complexity.</li>
 </ol>
-<p>For the full analysis with 400 iterations and all designs, see the
-paper.</p>
-</div>
-<div id="references" class="section level2">
-<h2>References</h2>
-<ul>
-<li>Ding, P., &amp; Lu, J. (2017). Principal stratification analysis
-using principal scores. <em>Journal of the Royal Statistical Society:
-Series B</em>.</li>
-<li>Chipman, H. A., George, E. I., &amp; McCulloch, R. E. (2010). BART:
-Bayesian additive regression trees. <em>The Annals of Applied
-Statistics</em>.</li>
-</ul>
+<p>These results should be interpreted as illustrative rather than
+definitive, and are intended to complement the more extensive simulation
+results reported in the paper.</p>
 </div>
 
 
