@@ -2,7 +2,7 @@
 
 **princeBART** is an R package implementing **Principal Stratification with Bayesian Additive Regression Trees (BART)** for causal inference with endogenous treatments.
 
-The package is designed for instrumental variable and encouragement designs with noncompliance, and provides Bayesian estimation of complier-specific causal effects, effect heterogeneity, and generalization to external populations.
+The package is designed for instrumental variable and encouragement designs with noncompliance, and provides Bayesian estimation of complier-specific causal effects, effect heterogeneity, and tools for assessing and implementing generalization to external populations under explicit transportability assumptions, including sensitivity analyses.
 
 The methodology is described in:
 
