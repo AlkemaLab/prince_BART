@@ -1,0 +1,23 @@
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [home, reference, articles, tutorials, news]
+  components:
+    articles:
+      text: Articles
+      menu:
+        - text: Introduction
+          href: articles/introduction.html
+        - text: Generalizing
+          href: articles/generalizing.html
+        - text: Simulation
+          href: articles/simulation.html
+
+articles:
+  - title: Vignettes
+    contents:
+      - introduction
+      - generalizing
+      - simulation

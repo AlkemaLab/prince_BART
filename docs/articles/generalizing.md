@@ -1,0 +1,252 @@
+# Generalizing princeBART results to external populations
+
+## Generalizing to External Populations
+
+A key feature of princeBART is the ability to **generalize treatment
+effects** to an external population using
+[`general_BART()`](../reference/general_BART.md). This is useful when:
+
+- You have a source study with detailed covariates and an instrument
+- You want to estimate the Population Average Treatment Effect (PATE) in
+  a larger target population (e.g., a nationally representative survey)
+- The target population may be missing some covariates collected in the
+  source
+
+The key identifying assumption is that **X captures all effect
+heterogeneity**, meaning the conditional treatment effect given X is the
+same for compliers in the source study as in the general population.
+
+### Simulating an External Population
+
+Let’s simulate a large external “survey” population that: 1. Has
+different covariate distributions than the source study 2. Is missing
+the `income` variable (a common scenario with survey data) 3. Has
+complex survey features (PSUs and weights)
+
+``` r
+library(princeBART)
+set.seed(123)
+n_external <- 500
+
+# External population overlaps with source but shifts slightly
+external_data <- data.frame(
+  age = rnorm(n_external, 43, 11),        # Slightly older on average
+  education = rnorm(n_external, 11.5, 3.5) # Slightly lower education
+  # Note: income is NOT available in external data
+)
+# Survey design: 100 PSUs with varying sizes
+external_data$psu <- sample(1:100, n_external, replace = TRUE)
+external_data$weight <- runif(n_external, 0.5, 2)  # Survey weights
+
+# Define a target subpopulation (e.g., adults under 60)
+external_data$eligible <- external_data$age < 60
+```
+
+### Generalizing to the External Population
+
+Now we use [`general_BART()`](../reference/general_BART.md) to: 1.
+Auto-detect and multiply impute missing variables (e.g., `income`) using
+BART 2. Compute instrument propensity e = P(Z\|X) as a feature expansion
+3. Predict potential outcomes Y(0) and Y(1) for external units 4.
+Estimate the PATE using Bayesian bootstrap for complex surveys
+
+``` r
+fit <- readRDS(system.file("extdata", "fit_intro.rds", package = "princeBART"))
+
+# Generalize treatment effects to external population
+# Missing variables are auto-detected and imputed
+pate_result <- general_BART(
+  princebart_fit = fit,
+  newdata = external_data,
+  subpop = external_data$eligible,       # Target subpopulation
+  psu = external_data$psu,               # PSU for survey inference
+  weights = external_data$weight,        # Survey weights
+  n_cores = 4,
+  verbose = TRUE
+)
+
+# View results
+print(pate_result)
+```
+
+The output shows: - **PATE**: The population average treatment effect
+estimate - **95% CI**: Credible interval incorporating both posterior
+and survey uncertainty - **N (subpop)**: Number of units in the target
+subpopulation
+
+The `general_pate` object stores all necessary information (predicted
+outcomes, survey design, model components) for downstream sensitivity
+analyses.
+
+### Understanding the Output
+
+``` r
+pate_result <- readRDS(system.file("extdata", "pate_result.rds", package = "princeBART"))
+
+
+# Detailed summary
+summary(pate_result)
+#> General BART PATE Summary
+#> =========================
+#> 
+#> Treatment Effect Estimate:
+#>   PATE:           0.097 
+#>   Posterior SD:   0.2115 
+#>   95% CI:        [-0.3139, 0.5053]
+#>   N (subpop):     465 
+#> 
+#> For sensitivity analyses, use:
+#>   general_BART_overlap(object)      - Generalizability overlap
+#>   general_BART_transportability(object)  - Weight-shift bounds
+
+# Access posterior draws for custom analyses
+hist(pate_result$draws,
+     main = "Posterior Distribution of PATE",
+     xlab = "Treatment Effect")
+abline(v = pate_result$pate, col = "red", lwd = 2)
+abline(v = pate_result$ci, col = "red", lty = 2)
+```
+
+![](generalizing_files/figure-html/pate-summary-1.png)
+
+### Assessing Generalizability Overlap
+
+A natural concern is whether the source study population is
+representative of the target. Use
+[`general_BART_overlap()`](../reference/general_BART_overlap.md) to
+compute the **generalizability overlap score**:
+
+``` math
+s = P(\text{complier}|X, \text{in source}) \times P(\text{in source}|X)
+```
+
+This measures how similar external units are to compliers in the source
+study.
+
+``` r
+# Compute overlap scores from the fitted general_pate object
+overlap <- general_BART_overlap(
+  object = pate_result,
+  verbose = TRUE
+)
+```
+
+``` r
+overlap <- readRDS(system.file("extdata", "overlap_result.rds", package = "princeBART"))
+
+# View overlap metrics
+head(overlap$overlap)
+#>        pi_c      pi_t       pi_s e_s_tilde
+#> 1 0.6119347 0.3007396 0.18403300 -1.944747
+#> 2 0.5771504 0.2446589 0.14120496 -2.265568
+#> 3 0.8282606 0.1836160 0.15208186 -2.177305
+#> 4 0.7009525 0.2792159 0.19571708 -1.867624
+#> 5 0.4785063 0.2015183 0.09642777 -2.704325
+#> 6 0.7498047 0.1568963 0.11764157 -2.478365
+
+# Plot overlap diagnostics
+plot_overlap(overlap)
+```
+
+![](generalizing_files/figure-html/overlap-analysis-plot-1.png)
+
+The overlap plot shows the distribution of selection scores for: -
+Source study compliers (blue) - Target population units (red)
+
+Good overlap means the distributions substantially overlap.
+
+#### Trimming for Overlap
+
+If some external units have poor overlap with source compliers, you can
+trim them from the PATE estimate using a threshold on the standardized
+selection score:
+
+``` r
+# Trim observations with |e_s_tilde| > 2 (i.e., outliers)
+overlap_trimmed <- general_BART_overlap(
+  object = pate_result,
+  threshold = 2,           # Standardized score threshold
+  overlap_value = "zero",  # Set tau = 0 for trimmed units
+  verbose = TRUE
+)
+```
+
+``` r
+overlap_trimmed <- readRDS(system.file("extdata", "overlap_trimmed_result.rds", package = "princeBART"))
+# Compare trimmed vs original PATE
+cat("Original PATE:", round(pate_result$pate, 4), "\n")
+#> Original PATE: 0.097
+cat("Trimmed PATE: ", round(overlap_trimmed$pate_trimmed, 4), "\n")
+#> Trimmed PATE:  0.0354
+cat("Units trimmed:", overlap_trimmed$n_trimmed, "\n")
+#> Units trimmed: 333
+```
+
+### Sensitivity Analysis for Confounding
+
+If you’re concerned about unmeasured confounding, use
+[`general_BART_transportability()`](../reference/general_BART_transportability.md)
+for weight-shift sensitivity analysis:
+
+``` r
+# Sensitivity analysis with gamma = 2
+# This computes bounds on PATE under worst-case weight perturbations
+sens <- general_BART_transportability(
+  object = pate_result,
+  gamma = 2,        # Allow weights to vary by factor of 2
+  n_sample = 100,   # Number of posterior draws to use
+  verbose = TRUE
+)
+```
+
+``` r
+sens <- readRDS(system.file("extdata", "sensitivity_result.rds", package = "princeBART"))
+# View sensitivity bounds
+cat("Gamma =", sens$gamma, "\n")
+#> Gamma = 2
+cat("Lower bound:", round(sens$lower$estimate, 4), 
+    "[", round(sens$lower$ci[1], 4), ",", round(sens$lower$ci[2], 4), "]\n")
+#> Lower bound: 0.046 [ -0.5496 , 0.5199 ]
+cat("Upper bound:", round(sens$upper$estimate, 4),
+    "[", round(sens$upper$ci[1], 4), ",", round(sens$upper$ci[2], 4), "]\n")
+#> Upper bound: 0.2859 [ -0.2878 , 0.7789 ]
+```
+
+The sensitivity analysis shows bounds on the PATE under worst-case
+weight perturbations. The `gamma` parameter controls the maximum ratio
+by which observation weights can be shifted—larger values allow for more
+severe confounding. If the bounds exclude zero, the effect is robust to
+confounding of that magnitude.
+
+#### Multiple Sensitivity Parameters
+
+You can run sensitivity analysis for multiple gamma values to create a
+sensitivity curve:
+
+``` r
+# Sensitivity curve for multiple gamma values
+gammas <- c(1.1, 1.25, 1.5, 2, 3)
+sens_results <- lapply(gammas, function(g) {
+  general_BART_transportability(pate_result, gamma = g)
+})
+```
+
+``` r
+sens_results <- readRDS(system.file("extdata", "sensitivity_curve_results.rds", package = "princeBART"))
+gammas <- c(1.1, 1.25, 1.5, 2, 3)
+# Extract bounds
+lower_bounds <- sapply(sens_results, function(x) x$lower$estimate)
+upper_bounds <- sapply(sens_results, function(x) x$upper$estimate)
+
+# Plot sensitivity curve
+plot(gammas, upper_bounds, type = "l", col = "red", 
+     ylim = range(c(lower_bounds, upper_bounds)),
+     xlab = "Gamma", ylab = "PATE Bounds", main = "Sensitivity Analysis")
+lines(gammas, lower_bounds, col = "blue")
+abline(h = 0, lty = 2)
+abline(h = pate_result$pate, lty = 3)
+legend("topright", c("Upper", "Lower", "Null", "Point est."), 
+       col = c("red", "blue", "black", "black"), lty = c(1, 1, 2, 3))
+```
+
+![](generalizing_files/figure-html/sensitivity-curve-results-1.png)
