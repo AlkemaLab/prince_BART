@@ -97,11 +97,11 @@ summary.princebart <- function(object,
   effect_summary <- effect[[2]]
 
   cat("Principal Strata Distribution:\n")
-  print(strata_summary)
+  print(as.data.frame(strata_summary))
   cat("\n")
 
   cat(sprintf("%s %s for Compliers:\n", type_label, effect_label))
-  print(effect_summary)
+  print(as.data.frame(effect_summary))
 
   invisible(list(
     strata = strata_summary,
