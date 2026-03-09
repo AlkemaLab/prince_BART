@@ -100,7 +100,8 @@ dbarts_binary <- function(
   addCallArgument <- utils::getFromNamespace("addCallArgument", "dbarts")
   quoteInNamespace <- utils::getFromNamespace("quoteInNamespace", "dbarts")
   parsePriors <- utils::getFromNamespace("parsePriors", "dbarts")
-  setDefaultsFromFormals <- utils::getFromNamespace("setDefaultsFromFormals", "dbarts")
+  setDefaultsFromFormals <-
+    utils::getFromNamespace("setDefaultsFromFormals", "dbarts")
   normal <- utils::getFromNamespace("normal", "dbarts")
   fixed <- utils::getFromNamespace("fixed", "dbarts")
   cgm <- utils::getFromNamespace("cgm", "dbarts")
@@ -127,21 +128,25 @@ dbarts_binary <- function(
 
   data <- eval(dataCall, evalEnv, getNamespace("dbarts"))
   data@n.cuts <- rep_len(attr(control, "n.cuts"), ncol(data@x))
-  data@sigma <- NA_real_  # Use NA_real_ as in original; dbarts handles this for binary
+  # Use NA_real_ as in original; dbarts handles this for binary
+  data@sigma <- NA_real_
   attr(control, "n.cuts") <- NULL
 
 
   # KEY FIX: Enhanced binary detection that handles edge cases
 
-  # Original dbarts only checks: length(uniqueResponses) == 2 && all(sort(uniqueResponses) == c(0, 1))
-  # We add: length(uniqueResponses) == 1 && all(uniqueResponses == 0 | uniqueResponses == 1)
+  # Original dbarts only checks:
+  #' length(uniqueResponses) == 2 && all(sort(uniqueResponses) == c(0, 1))
+  #' We add: length(uniqueResponses) == 1 && 
+  #' all(uniqueResponses == 0 | uniqueResponses == 1)
   uniqueResponses <- unique(data@y)
   if (length(uniqueResponses) == 2 && all(sort(uniqueResponses) == c(0, 1))) {
     control@binary <- TRUE
   }
-  # Edge case: stratum has only 0s or only 1s (can happen in principal stratification)
+  # Edge case: stratum has only 0s or only 1s
+  #'(can happen in principal stratification)
   if (length(uniqueResponses) == 1 &&
-      all(uniqueResponses == 0 | uniqueResponses == 1)) {
+        all(uniqueResponses == 0 | uniqueResponses == 1)) {
     control@binary <- TRUE
   }
 
@@ -149,7 +154,10 @@ dbarts_binary <- function(
   if (control@binary && !is.null(data@offset) && all(data@offset == 0)) {
     data@offset <- NULL
   }
-  if (control@binary && !is.null(data@offset.test) && all(data@offset.test == 0)) {
+  if (control@binary &&
+      !is.null(data@offset.test) &&
+      all(data@offset.test == 0)
+  ) {
     data@offset.test <- NULL
   }
 
@@ -163,13 +171,14 @@ dbarts_binary <- function(
 
   # Create the model with binary-appropriate settings
   model <- methods::new(
-    "dbartsModel",
-    tree_prior,
-    node_prior_result$node.prior,
-    node_prior_result$node.hyperprior,
-    resid_prior,
-    proposal.probs = c(birth_death = 0.5, swap = 0.1, change = 0.4, birth = 0.5),
-    node.scale = 3.0  # 3.0 for binary, 0.5 for continuous
+    "dbartsModel"
+    , tree_prior
+    , node_prior_result$node.prior
+    , node_prior_result$node.hyperprior
+    , resid_prior
+    , proposal.probs =
+      c(birth_death = 0.5, swap = 0.1, change = 0.4, birth = 0.5)
+    , node.scale = 3.0  # 3.0 for binary, 0.5 for continuous
   )
 
   # Create and return the sampler
