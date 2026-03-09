@@ -2,7 +2,6 @@
 ^archive$
 ^output$
 ^data$
-^.*\.html$
 ^.*\.Rproj$
 ^\.Rproj\.user$
 ^LICENSE\.md$
