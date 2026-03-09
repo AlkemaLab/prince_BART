@@ -1,11 +1,3 @@
-library(tidyverse)
-library(dbarts)
-library(posterior)
-library(parallel)
-library(truncnorm)
-library(data.table)
-library(VGAM)
-
 #' Fit Principal Stratification BART for Ordinal Uptake (Single Chain)
 #'
 #' Internal function that fits one MCMC chain of the ordinal principal
@@ -151,7 +143,9 @@ library(VGAM)
     X_w_grid = X_w_grid
   )
 
-  for (s in list(samplers$z0, samplers$z1, samplers$y0, samplers$y1)) s$sampleTreesFromPrior()
+  for (s in list(samplers$z0, samplers$z1, samplers$y0, samplers$y1)){
+    s$sampleTreesFromPrior()
+  }
 
   offset <- 0L
   for (i in seq_len(n_total)) {
@@ -300,8 +294,8 @@ validate_ordinal_inputs <- function(
 }
 
 prepare_ordinal_data <- function(data) {
-  if (!is.data.table(data)) {
-    data <- as.data.table(data)
+  if (!data.table::is.data.table(data)) {
+    data <- data.table::as.data.table(data)
   }
 
   covariate_cols <- setdiff(names(data), c("Y", "Z", "W"))
@@ -337,9 +331,9 @@ initialize_w_states <- function(W, Z, n, init_w_poisson_lambda) {
 
 build_w_grid <- function(w_max, monotonicity) {
   if (monotonicity) {
-    rbindlist(lapply(0:w_max, function(x) CJ(w0 = x, w1 = 0:x)))
+    data.table::rbindlist(lapply(0:w_max, function(x) data.table::CJ(w0 = x, w1 = 0:x)))
   } else {
-    expand.grid(w0 = 0:w_max, w1 = 0:w_max) |> as.data.table()
+    expand.grid(w0 = 0:w_max, w1 = 0:w_max) |> data.table::as.data.table()
   }
 }
 
@@ -347,19 +341,21 @@ prepare_test_matrices <- function(X, Z, w0, w1, w_grid) {
   z1_idx <- which(Z == 1)
   z0_idx <- which(Z == 0)
 
-  xw0_dt <- data.table(id = z0_idx, X[z0_idx, ], w0 = w0[z0_idx])
-  xw1_dt <- data.table(id = z1_idx, X[z1_idx, ], w1 = w1[z1_idx])
+  covariate_names <- colnames(X)
+  X0 <- as.data.frame(X[z0_idx, , drop = FALSE], check.names = FALSE)
+  X1 <- as.data.frame(X[z1_idx, , drop = FALSE], check.names = FALSE)
 
-  setkey(xw0_dt, w0)
-  setkey(xw1_dt, w1)
+  xw0 <- cbind(data.frame(id = z0_idx, w0 = w0[z0_idx]), X0)
+  xw1 <- cbind(data.frame(id = z1_idx, w1 = w1[z1_idx]), X1)
 
-  setkey(w_grid, w0)
-  xw0 <- w_grid[xw0_dt, allow.cartesian = TRUE]
+  grid_df <- as.data.frame(w_grid)
+  xw0 <- merge(xw0, grid_df, by = "w0", all.x = TRUE, sort = FALSE)
+  xw1 <- merge(xw1, grid_df, by = "w1", all.x = TRUE, sort = FALSE)
 
-  setkey(w_grid, w1)
-  xw1 <- w_grid[xw1_dt, allow.cartesian = TRUE]
+  cols <- c("id", covariate_names, "w0", "w1")
+  xw <- rbind(xw1[, cols, drop = FALSE], xw0[, cols, drop = FALSE])
+  xw <- xw[order(xw$id), , drop = FALSE]
 
-  xw <- rbindlist(list(xw1, xw0)) |> setorder(id)
   id <- xw$id
   xw$id <- NULL
 
@@ -443,9 +439,9 @@ sample_latent_z_states <- function(
 
   if (rho == 0) {
     z1 <- length(w1) |>
-      rtruncnorm(a = z1_lw, b = z1_up, mean = mu_z1, sd = sig_z1)
+      truncnorm::rtruncnorm(a = z1_lw, b = z1_up, mean = mu_z1, sd = sig_z1)
     z0 <- length(w0) |>
-      rtruncnorm(a = z0_lw, b = z0_up, mean = mu_z0, sd = sig_z0)
+      truncnorm::rtruncnorm(a = z0_lw, b = z0_up, mean = mu_z0, sd = sig_z0)
   } else {
     z1z0 <- sample_bivariate_gibbs(
       mu1 = mu_z1,
@@ -473,7 +469,7 @@ build_strata_posterior_dt <- function(
   my0 <- my1 <- my <- pg <- NULL
   numerator_y1 <- numerator_y0 <- sum_num_y1 <- sum_num_y0 <- NULL
   ppw <- safe_ppw <- row_sum <- w0 <- w1 <- NULL
-  strata_probs_dt <- data.table(X_w_grid)
+  strata_probs_dt <- data.table::data.table(X_w_grid)
   strata_probs_dt[, id := id]
   strata_probs_dt[, Z := Z[id]]
   strata_probs_dt[, Y := Y[id]]
@@ -557,11 +553,11 @@ sample_bivariate_gibbs <- function(
   for (iter in seq_len(n_iter)) {
     cond_mu1 <- mu1 + rho * (sd1 / sd2) * (x2 - mu2)
     cond_sd1 <- sqrt(1 - rho^2) * sd1
-    x1 <- rtruncnorm(n, a = lw1, b = up1, mean = cond_mu1, sd = cond_sd1)
+    x1 <- truncnorm::rtruncnorm(n, a = lw1, b = up1, mean = cond_mu1, sd = cond_sd1)
 
     cond_mu2 <- mu2 + rho * (sd2 / sd1) * (x1 - mu1)
     cond_sd2 <- sqrt(1 - rho^2) * sd2
-    x2 <- rtruncnorm(n, a = lw2, b = up2, mean = cond_mu2, sd = cond_sd2)
+    x2 <- truncnorm::rtruncnorm(n, a = lw2, b = up2, mean = cond_mu2, sd = cond_sd2)
   }
 
   cbind(x1, x2)

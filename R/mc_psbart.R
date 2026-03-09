@@ -89,18 +89,19 @@ resolve_and_validate_uptake <- function(W, uptake_type) {
         verbose = FALSE
       )
     },
-    future.seed = TRUE,
-    future.packages = "princeBART"
+    future.seed = TRUE
   )
 
   list(
-    trees = combine_chain_trees(res0, keep_trees),
-    imp = combine_chain_array(lapply(res0, function(x) x$imputed), c("nt", "at")),
-    probs = combine_chain_array(
-      lapply(res0, function(x) x$probs),
-      c("p_a", "p_n", "m_y0c", "m_y1c", "m_y0n", "m_y1a")
-    ),
-    check = NULL
+    trees = combine_chain_trees(res0, keep_trees)
+    , imp = combine_chain_array(
+      lapply(res0, function(x) x$imputed), c("nt", "at")
+    )
+    , probs = combine_chain_array(
+      lapply(res0, function(x) x$probs)
+      , c("p_a", "p_n", "m_y0c", "m_y1c", "m_y0n", "m_y1a")
+    )
+    , check = NULL
   )
 }
 
@@ -154,8 +155,7 @@ resolve_and_validate_uptake <- function(W, uptake_type) {
         verbose = FALSE
       )
     },
-    future.seed = TRUE,
-    future.packages = "princeBART"
+    future.seed = TRUE
   )
 
   list(
@@ -345,7 +345,9 @@ prince_BART <- function(
   # Compute propensity for the instrument Z in both modes
   if (is.null(propensity)) {
     if (verbose) message("Computing propensity scores for Z...")
-    e <- dbarts::bart2(X, Z, verbose = FALSE) |> stats::fitted() |> stats::qnorm()
+    e <- dbarts::bart2(X, Z, verbose = FALSE) |>
+      stats::fitted() |>
+      stats::qnorm()
   } else {
     validate_propensity(propensity, n)
     e <- stats::qnorm(propensity)
@@ -392,12 +394,16 @@ prince_BART <- function(
   # Set up future plan if not already configured
   old_plan <- future::plan()
   if (inherits(old_plan, "sequential") && workers > 1) {
-    if (verbose) message("Setting up multisession plan with ", workers, " workers")
+    if (verbose) message(
+      "Setting up multisession plan with ", workers, " workers"
+    )
     future::plan(future::multisession, workers = workers)
     on.exit(future::plan(old_plan), add = TRUE)
   }
 
-  if (verbose) message("Running ", n_chains, " chains (", uptake_type, " uptake)...")
+  if (verbose) message(
+    "Running ", n_chains, " chains (", uptake_type, " uptake)..."
+  )
 
   # Dispatch to modality-specific chain runner
   chain_results <- if (uptake_type == "binary") {
@@ -471,7 +477,11 @@ prince_BART <- function(
   res$uptake_type <- uptake_type
   res$call <- match.call()
 
-  class(res) <- "princebart"
+  class(res) <- if (uptake_type == "binary") {
+    c("prince_bart", "prince_bart_binary")
+  } else {
+    c("prince_bart", "prince_bart_ordinal")
+  }
 
   if (verbose) message("Done.")
   res

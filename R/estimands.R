@@ -83,23 +83,37 @@ get_mix_tau <- function(p_arr, treated = NULL) {
     sname <- c("compliers, Z=1", "never-takers, Z=1", "always-takers, Z=1")
   }
 
-  p_n <- p_arr[, , "p_n", treated, drop = FALSE]
-  p_a <- p_arr[, , "p_a", treated, drop = FALSE]
-  p_c <- 1 - p_n - p_a
+  # Extract strata probabilities for treated units
+  # p_arr dimensions: (iter, chain, var, units)
+  # Variable indices: 1=p_a, 2=p_n, 3:6=outcomes
+  p_a_arr <- p_arr[, , 1, treated, drop = FALSE]  # (iter, chain, 1, n_treated)
+  p_n_arr <- p_arr[, , 2, treated, drop = FALSE]  # (iter, chain, 1, n_treated)
+  
+  # Compute p_c = 1 - p_n - p_a
+  p_c_arr <- 1 - p_n_arr - p_a_arr
+  
+  # Reshape: aperm to move variable dim to end, then select that dim
+  # From (iter, chain, 1, units) -> (iter, chain, units, 1)
+  p_a <- aperm(p_a_arr, c(1, 2, 4, 3))[, , , 1, drop = FALSE]
+  p_n <- aperm(p_n_arr, c(1, 2, 4, 3))[, , , 1, drop = FALSE]
+  p_c <- aperm(p_c_arr, c(1, 2, 4, 3))[, , , 1, drop = FALSE]
+  
+  # Now p_a, p_n, p_c are (iter, chain, units, 1). Use abind to stack along dim 4
+  p_g <- abind::abind(p_a, p_n, p_c, along = 4)  # Result: (iter, chain, units, 3)
+  
+  strata_prob <- apply(p_g, c(1:2, 4), mean)  # Keep iter, chain, strata; average units
 
-  # Reshape for computation
-  p_n <- p_arr[, , "p_n", treated]
-  p_a <- p_arr[, , "p_a", treated]
-  p_c <- 1 - p_n - p_a
-
-  p_g <- abind::abind(p_c, p_n, p_a, along = 4)
-  strata_prob <- apply(p_g, c(1:2, 4), mean)
-
-  m_y <- p_arr[, , 3:6, treated]
+  m_y_arr <- p_arr[, , 3:6, treated, drop = FALSE]  # (iter, chain, 4_vars, n_treated)
+  # Reshape: aperm to move var dim to end
+  # From (iter, chain, 4, units) -> (iter, chain, units, 4)
+  m_y <- aperm(m_y_arr, c(1, 2, 4, 3))
+  
   str <- c(1, 1, 2, 3)
 
   mean_pout <- lapply(1:4, function(g) {
-    numer <- apply(m_y[, , g, ] * p_g[, , , str[g]], 1:2, mean)
+    # m_y[, , , g] is (iter, chain, units)
+    # p_g[, , , str[g]] is (iter, chain, units)
+    numer <- apply(m_y[, , , g] * p_g[, , , str[g]], 1:2, mean)
     numer / strata_prob[, , str[g]]
   })
 
@@ -201,4 +215,78 @@ get_sample_tau <- function(imp_g, imp_o, treated = NULL, include_corr = TRUE) {
   strata_prob <- posterior::as_draws_array(strata_prob)
 
   list(strata_prob, mean_effect)
+}
+
+
+# =============================================================================
+# Ordinal Uptake Estimands
+# =============================================================================
+
+#' Ordinal Complier-Like Contrast Estimands
+#'
+#' Compute posterior summaries for contrasts in ordinal uptake settings.
+#' Focuses on the monotone compliance group (W(0) - W(1) = 1) and
+#' stratifies by baseline uptake W(0) up to level 5.
+#'
+#' @param prince_bart_fit A fitted ordinal prince_bart object.
+#'
+#' @return A list with the following elements:
+#'   \item{overall}{Data frame of posterior summary for the overall W(0)-W(1)=1 contrast.}
+#'   \item{by_w0}{Data frame of posterior summaries stratified by W(0)=j for j=0..5.}
+#'
+#' @keywords internal
+estimands_ordinal_mixed <- function(prince_bart_fit) {
+  imp <- prince_bart_fit$imp
+  probs <- prince_bart_fit$probs
+
+  w0 <- imp[, , "w0", , drop = FALSE][, , 1, , drop = FALSE]
+  w1 <- imp[, , "w1", , drop = FALSE][, , 1, , drop = FALSE]
+  y0 <- probs[, , "m_y0", , drop = FALSE][, , 1, , drop = FALSE]
+  y1 <- probs[, , "m_y1", , drop = FALSE][, , 1, , drop = FALSE]
+
+  # Overall contrast: complier-like units where W(0) - W(1) = 1
+  co <- (w0 - w1) == 1
+
+  # Treatment effect-like contrast: mean Y(1) - mean Y(0) | complier-like
+  d_p <- y0 - y1
+  d_p[!co] <- NA
+
+  # Average over units per iteration-chain pair (keep iter x chain shape)
+  md_overall <- apply(d_p, c(1, 2), function(x) {
+    if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+  })
+  md_overall <- array(md_overall, dim = c(dim(md_overall)[1], dim(md_overall)[2], 1))
+  md_overall <- posterior::as_draws_array(md_overall)
+  dimnames(md_overall)[[3]] <- "W(0) - W(1) = 1 contrast"
+
+  overall_summary <- summary(md_overall)
+
+  # Stratified by W(0) = j for j = 0, 1, ..., 5
+  w0_vals <- w0
+  max_w0 <- min(5, max(w0_vals, na.rm = TRUE))
+  
+  md_by_w0_list <- lapply(0:max_w0, function(j) {
+    co_j <- ((w0 - w1) == 1) & (w0 == j)
+    d_p_j <- y0 - y1
+    d_p_j[!co_j] <- NA
+    md_j <- apply(d_p_j, c(1, 2), function(x) {
+      if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+    })
+    md_j
+  })
+
+  # Combine into draws array with variable names
+  md_by_w0 <- abind::abind(md_by_w0_list, along = 3)
+  dimnames(md_by_w0) <- list(
+    iteration = NULL,
+    chain = NULL,
+    variable = paste0("W(0)=", 0:max_w0, " | W(0)-W(1)=1")
+  )
+  md_by_w0 <- posterior::as_draws_array(md_by_w0)
+  by_w0_summary <- summary(md_by_w0)
+
+  list(
+    overall = overall_summary,
+    by_w0 = by_w0_summary
+  )
 }
