@@ -1,7 +1,7 @@
 # Predict from Saved Trees
 
 Generate predictions for new data using saved tree structures from a
-princebart fit.
+prince_bart fit.
 
 ## Usage
 
@@ -13,7 +13,7 @@ predict_trees(trees, newdata, scaling = NULL, n_cores = 1)
 
 - trees:
 
-  A data.frame of tree structures from a princebart fit.
+  A data.frame of tree structures from a prince_bart fit.
 
 - newdata:
 
@@ -24,7 +24,7 @@ predict_trees(trees, newdata, scaling = NULL, n_cores = 1)
 
   Optional list with `center` and `scale` named vectors for
   standardizing newdata before prediction. Typically from
-  `princebart_fit$scaling`. If NULL, newdata is assumed to already be
+  `prince_bart_fit$scaling`. If NULL, newdata is assumed to already be
   scaled.
 
 - n_cores:

@@ -1,7 +1,7 @@
 #' Treatment Effect Estimands for Compliers
 #'
 #' Internal functions to compute various treatment effect estimands for the complier
-#' stratum from a fitted princebart model.
+#' stratum from a fitted prince_bart model.
 #'
 #' @param prince_bart_fit A fitted object from \code{prince_BART}.
 #' @param induce_residual_corr Logical; for sample estimands, whether to induce
@@ -64,7 +64,7 @@ satt_c <- function(prince_bart_fit, induce_residual_corr = FALSE) {
 #' Internal function to compute mixture-based estimands from posterior
 #' probability arrays.
 #'
-#' @param p_arr 4D probability array from princebart fit.
+#' @param p_arr 4D probability array from prince_bart fit.
 #' @param treated Optional logical vector indicating treated units.
 #'
 #' @return List with strata probabilities and mean effects as draws arrays.
@@ -74,12 +74,12 @@ get_mix_tau <- function(p_arr, treated = NULL) {
   if (is.null(treated)) {
     treated <- rep(TRUE, dim(p_arr)[4])
     outname <- c("Y(0) | compliers", "Y(1) | compliers", "Y(0) | never-takers", 
-                 "Y(1) | always-takers", "MATE | compliers")
+                 "Y(1) | always-takers", "Mixed ATE for compliers")
     sname <- c("compliers", "never-takers", "always-takers")
   } else {
     outname <- c("Y(0) | compliers, Z=1", "Y(1) | compliers, Z=1", 
                  "Y(0) | never-takers, Z=1", "Y(1) | always-takers, Z=1", 
-                 "MATT | compliers")
+                 "Mixed ATT for compliers")
     sname <- c("compliers, Z=1", "never-takers, Z=1", "always-takers, Z=1")
   }
 
@@ -156,12 +156,12 @@ get_sample_tau <- function(imp_g, imp_o, treated = NULL, include_corr = TRUE) {
   if (is.null(treated)) {
     treated <- rep(TRUE, dim(imp_g)[4])
     outname <- c("Y(0) | compliers", "Y(1) | compliers", "Y(0) | never-takers", 
-                 "Y(1) | always-takers", "SATE | compliers")
+                 "Y(1) | always-takers", "Sample ATE for compliers")
     sname <- c("compliers", "never-takers", "always-takers")
   } else {
     outname <- c("Y(0) | compliers, Z=1", "Y(1) | compliers, Z=1", 
                  "Y(0) | never-takers, Z=1", "Y(1) | always-takers, Z=1", 
-                 "SATT | compliers")
+                 "Sample ATT for compliers")
     sname <- c("compliers, Z=1", "never-takers, Z=1", "always-takers, Z=1")
   }
 
@@ -229,13 +229,44 @@ get_sample_tau <- function(imp_g, imp_o, treated = NULL, include_corr = TRUE) {
 #' stratifies by baseline uptake W(0) up to level 5.
 #'
 #' @param prince_bart_fit A fitted ordinal prince_bart object.
+#' @param adaptive_levels Logical; if TRUE (default), choose reported levels
+#'   adaptively by cumulative affected-unit mass.
+#' @param cumulative_mass Numeric in (0, 1]; target cumulative mass used when
+#'   \\code{adaptive_levels = TRUE}. Default is \\code{0.80}.
+#' @param level_threshold Optional integer threshold K. If supplied, levels
+#'   \\code{1..K} are shown individually and higher levels are pooled as
+#'   \\code{"Level > K"}; this overrides adaptive selection.
 #'
 #' @return A list with the following elements:
-#'   \item{overall}{Data frame of posterior summary for the overall W(0)-W(1)=1 contrast.}
-#'   \item{by_w0}{Data frame of posterior summaries stratified by W(0)=j for j=0..5.}
+#'   \item{overall}{Data frame of posterior summary for
+#'     \\eqn{E[Y(w=1)-Y(w=0) \\mid W(0)-W(1)=1]}.}
+#'   \item{by_w0}{Data frame of posterior summaries by reported level groups.}
+#'   \item{grouping}{List with grouping metadata used for level reporting.}
 #'
 #' @keywords internal
-estimands_ordinal_mixed <- function(prince_bart_fit) {
+estimands_ordinal_mixed <- function(
+  prince_bart_fit,
+  adaptive_levels = TRUE,
+  cumulative_mass = 0.80,
+  level_threshold = NULL
+) {
+  if (!is.logical(adaptive_levels) ||
+        length(adaptive_levels) != 1L || is.na(adaptive_levels)) {
+    stop("adaptive_levels must be a single TRUE/FALSE value")
+  }
+  if (!is.numeric(cumulative_mass) || length(cumulative_mass) != 1L ||
+      is.na(cumulative_mass) || cumulative_mass <= 0 || cumulative_mass > 1) {
+    stop("cumulative_mass must be a single numeric value in (0, 1]")
+  }
+  if (!is.null(level_threshold)) {
+    if (!is.numeric(level_threshold) || length(level_threshold) != 1L ||
+          is.na(level_threshold) || level_threshold < 1 ||
+          as.integer(level_threshold) != level_threshold) {
+      stop("level_threshold must be NULL or a single integer >= 1")
+    }
+    level_threshold <- as.integer(level_threshold)
+  }
+
   imp <- prince_bart_fit$imp
   probs <- prince_bart_fit$probs
 
@@ -244,30 +275,91 @@ estimands_ordinal_mixed <- function(prince_bart_fit) {
   y0 <- probs[, , "m_y0", , drop = FALSE][, , 1, , drop = FALSE]
   y1 <- probs[, , "m_y1", , drop = FALSE][, , 1, , drop = FALSE]
 
-  # Overall contrast: complier-like units where W(0) - W(1) = 1
+  # Affected units under monotonicity where instrument shifts uptake by 1.
   co <- (w0 - w1) == 1
 
-  # Treatment effect-like contrast: mean Y(1) - mean Y(0) | complier-like
-  d_p <- y0 - y1
+  # Mixed contrast: mean Y(1) - Y(0) among affected units.
+  d_p <- y1 - y0
   d_p[!co] <- NA
 
   # Average over units per iteration-chain pair (keep iter x chain shape)
   md_overall <- apply(d_p, c(1, 2), function(x) {
     if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
   })
-  md_overall <- array(md_overall, dim = c(dim(md_overall)[1], dim(md_overall)[2], 1))
+  md_overall <- array(md_overall
+    , dim = c(dim(md_overall)[1], dim(md_overall)[2], 1)
+  )
   md_overall <- posterior::as_draws_array(md_overall)
-  dimnames(md_overall)[[3]] <- "W(0) - W(1) = 1 contrast"
+  dimnames(md_overall)[[3]] <- "Mixed ATE among affected units"
 
   overall_summary <- summary(md_overall)
 
-  # Stratified by W(0) = j for j = 0, 1, ..., 5
-  w0_vals <- w0
-  max_w0 <- min(5, max(w0_vals, na.rm = TRUE))
-  
-  md_by_w0_list <- lapply(0:max_w0, function(j) {
+  # Determine affected levels and their masses p_j, with j ordered ascending.
+  affected_w0 <- as.numeric(w0[co])
+  affected_w0 <- affected_w0[!is.na(affected_w0) & affected_w0 >= 1]
+
+  if (length(affected_w0) == 0L) {
+    by_w0_summary <- data.frame(
+      variable = character(0),
+      mean = numeric(0),
+      median = numeric(0),
+      sd = numeric(0),
+      mad = numeric(0),
+      q5 = numeric(0),
+      q95 = numeric(0)
+    )
+
+    return(list(
+      overall = overall_summary,
+      by_w0 = by_w0_summary,
+      grouping = list(
+        rule = if (!is.null(level_threshold)) "manual"
+        else if (adaptive_levels) "adaptive" else "all_levels"
+        , cumulative_mass = cumulative_mass
+        , threshold = if (!is.null(level_threshold)) level_threshold 
+        else NA_integer_
+        , pooled = FALSE
+        , level_masses = data.frame(level = integer(0)
+          , mass = numeric(0), cumulative_mass = numeric(0)
+        )
+      )
+    ))
+  }
+
+  level_table <- table(affected_w0)
+  levels_observed <- as.integer(names(level_table))
+  ord <- order(levels_observed)
+  levels_observed <- levels_observed[ord]
+  level_mass <- as.numeric(level_table)[ord] / sum(as.numeric(level_table))
+  cum_mass <- cumsum(level_mass)
+
+  # Choose threshold K following precedence: manual > adaptive > all levels.
+  if (!is.null(level_threshold)) {
+    k <- level_threshold
+    rule <- "manual"
+  } else if (adaptive_levels) {
+    first_reach_idx <- which(cum_mass >= cumulative_mass)[1]
+    if (is.na(first_reach_idx)) {
+      first_reach_idx <- length(levels_observed)
+    }
+    k <- levels_observed[first_reach_idx]
+    # Safeguard: keep at least first two observed levels when available.
+    if (length(levels_observed) >= 2L) {
+      k <- max(k, levels_observed[2])
+    }
+    rule <- "adaptive"
+  } else {
+    k <- max(levels_observed)
+    rule <- "all_levels"
+  }
+
+  levels_to_report <- levels_observed[levels_observed <= k]
+  levels_above_k <- levels_observed[levels_observed > k]
+  pooled <- length(levels_above_k) > 0L
+
+  md_by_w0_list <- lapply(levels_to_report, function(j) {
     co_j <- ((w0 - w1) == 1) & (w0 == j)
-    d_p_j <- y0 - y1
+    d_p_j <- y1 - y0
     d_p_j[!co_j] <- NA
     md_j <- apply(d_p_j, c(1, 2), function(x) {
       if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
@@ -275,18 +367,44 @@ estimands_ordinal_mixed <- function(prince_bart_fit) {
     md_j
   })
 
+  labels <- paste0("Level ", levels_to_report)
+
+  if (pooled) {
+    co_pool <- ((w0 - w1) == 1) & (w0 > k)
+    d_p_pool <- y1 - y0
+    d_p_pool[!co_pool] <- NA
+    md_pool <- apply(d_p_pool, c(1, 2), function(x) {
+      if (all(is.na(x))) NA_real_ else mean(x, na.rm = TRUE)
+    })
+    md_by_w0_list[[length(md_by_w0_list) + 1L]] <- md_pool
+    labels <- c(labels, paste0("Level > ", k))
+  }
+
   # Combine into draws array with variable names
   md_by_w0 <- abind::abind(md_by_w0_list, along = 3)
   dimnames(md_by_w0) <- list(
     iteration = NULL,
     chain = NULL,
-    variable = paste0("W(0)=", 0:max_w0, " | W(0)-W(1)=1")
+    variable = labels
   )
   md_by_w0 <- posterior::as_draws_array(md_by_w0)
   by_w0_summary <- summary(md_by_w0)
 
+  level_masses <- data.frame(
+    level = levels_observed,
+    mass = level_mass,
+    cumulative_mass = cum_mass
+  )
+
   list(
     overall = overall_summary,
-    by_w0 = by_w0_summary
+    by_w0 = by_w0_summary,
+    grouping = list(
+      rule = rule,
+      cumulative_mass = cumulative_mass,
+      threshold = k,
+      pooled = pooled,
+      level_masses = level_masses
+    )
   )
 }

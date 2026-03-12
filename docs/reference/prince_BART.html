@@ -13,7 +13,7 @@ with noncompliance and targets causal effects for compliers."></head><body>
 
     <a class="navbar-brand me-2" href="../index.html">princeBART</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -27,7 +27,9 @@ with noncompliance and targets causal effects for compliers."></head><body>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/introduction.html">Introduction</a></li>
     <li><a class="dropdown-item" href="../articles/generalizing.html">Generalizing</a></li>
     <li><a class="dropdown-item" href="../articles/simulation.html">Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/ordinal.html">Ordinal Uptake</a></li>
   </ul></li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
       </ul></div>
@@ -68,6 +70,8 @@ with noncompliance and targets causal effects for compliers.</p>
 <span>  k <span class="op">=</span> <span class="fl">2</span>,</span>
 <span>  n_trees <span class="op">=</span> <span class="fl">200L</span>,</span>
 <span>  workers <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  uptake_type <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"auto"</span>, <span class="st">"binary"</span>, <span class="st">"ordinal"</span><span class="op">)</span>,</span>
+<span>  rho <span class="op">=</span> <span class="fl">0</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -99,7 +103,7 @@ Z is the instrument (treatment assignment), and W is treatment uptake.</p></dd>
 
 
 <dt id="arg-w">W<a class="anchor" aria-label="anchor" href="#arg-w"></a></dt>
-<dd><p>A binary treatment uptake/received vector (0/1).</p></dd>
+<dd><p>Treatment uptake/received vector.</p></dd>
 
 
 <dt id="arg-propensity">propensity<a class="anchor" aria-label="anchor" href="#arg-propensity"></a></dt>
@@ -145,25 +149,53 @@ prediction and generalization (default: FALSE).</p></dd>
 available cores up to <code>n_chains</code>. Set to 1 for sequential execution.</p></dd>
 
 
+<dt id="arg-uptake-type">uptake_type<a class="anchor" aria-label="anchor" href="#arg-uptake-type"></a></dt>
+<dd><p>Character scalar controlling uptake model:
+<code>"auto"</code> (default) chooses binary if <code>W in {0,1}</code> and ordinal otherwise;
+<code>"binary"</code> enforces binary uptake model;
+<code>"ordinal"</code> enforces ordinal/count uptake model.</p></dd>
+
+
+<dt id="arg-rho">rho<a class="anchor" aria-label="anchor" href="#arg-rho"></a></dt>
+<dd><p>Numeric in (-1, 1); residual correlation between the latent
+propensity scores for \(W(1)\) and \(W(0)\) in the bivariate ordinal
+sampler. Only used when <code>uptake_type = "ordinal"</code>. Default is <code>0</code>
+(conditionally independent potential treatments given X). Varying this
+parameter is a natural sensitivity analysis since the assumption is not
+testable from the observed data.</p></dd>
+
+
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
 <dd><p>Logical; print progress messages (default: FALSE).</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A list of class <code>"princebart"</code> containing posterior draws from
-all chains, including:</p><ul><li><p><code>imp</code>: Imputed principal stratum indicators
-(iteration x chain x stratum x unit).</p></li>
-<li><p><code>probs</code>: Posterior draws of stratum probabilities and
-stratum-specific outcome means, including
-<code>p_a</code>, <code>p_n</code>, <code>m_y0c</code>, <code>m_y1c</code>, etc.</p></li>
+    <p>A list of class <code>"prince_bart"</code> containing posterior draws from
+all chains, including:</p><ul><li><p><code>imp</code>: Imputed latent quantities
+(iteration x chain x variable x unit).</p></li>
+<li><p><code>probs</code>: Posterior draws of probabilities/outcome means.</p></li>
+<li><p><code>check</code>: Ordinal diagnostic array (ordinal mode only).</p></li>
 <li><p><code>trees</code>: Fitted BART trees (if <code>keep_trees = TRUE</code>).</p></li>
-<li><p><code>data</code>: Processed input data, including covariates,
-instrument propensity scores, and outcomes.</p></li>
+<li><p><code>data</code>: Stored input data, including <code>X_model</code>
+(processed covariates used by the fitted model), <code>X_raw</code>
+(raw covariates when available), <code>X</code> (compatibility alias to
+<code>X_model</code>), instrument propensity scores, and outcomes.</p></li>
 </ul></div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>The model jointly estimates:</p><ul><li><p>Principal stratum membership probabilities
+    <p>Shared preprocessing is applied in all modes: formula parsing, validation,
+covariate scaling, propensity estimation for the binary instrument Z,
+optional overlap trimming, and propensity augmentation of X.
+After preprocessing, model fitting dispatches to either binary or ordinal
+PS-BART chain runners based on <code>uptake_type</code>.</p>
+<p>For fits created from a formula or data.frame input, the returned object
+stores both a model-space covariate matrix and, when available, a raw
+covariate data.frame. The model-space representation is used internally for
+fitting and prediction; the raw representation is retained for downstream
+tasks that benefit from original factor/ordered-factor classes, such as
+<code><a href="segment_heterogeneity.html">segment_heterogeneity()</a></code>.</p>
+<p>The model jointly estimates:</p><ul><li><p>Principal stratum membership probabilities
 (\(P(\text{complier} \mid X)\), \(P(\text{never-taker} \mid X)\),
 \(P(\text{always-taker} \mid X)\)),</p></li>
 <li><p>Potential outcome regressions within strata, including
@@ -202,6 +234,7 @@ preferred parallel backend:</p>
 <span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">prince_BART</span><span class="op">(</span></span></span>
 <span class="r-in"><span>  <span class="va">Y</span> <span class="op">~</span> <span class="va">X1</span> <span class="op">+</span> <span class="va">X2</span> <span class="op">+</span> <span class="va">X3</span> <span class="op">|</span> <span class="va">Z</span> <span class="op">|</span> <span class="va">W</span>,</span></span>
 <span class="r-in"><span>  data <span class="op">=</span> <span class="va">mydata</span>,</span></span>
+<span class="r-in"><span>  uptake_type <span class="op">=</span> <span class="st">"auto"</span>,</span></span>
 <span class="r-in"><span>  n_chains <span class="op">=</span> <span class="fl">4</span>,</span></span>
 <span class="r-in"><span>  n_warmup <span class="op">=</span> <span class="fl">1000</span>,</span></span>
 <span class="r-in"><span>  n_samples <span class="op">=</span> <span class="fl">1500</span></span></span>

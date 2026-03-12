@@ -198,9 +198,17 @@ resolve_and_validate_uptake <- function(W, uptake_type) {
 #' @param workers Number of parallel workers. If NULL (default), uses all
 #'   available cores up to \code{n_chains}. Set to 1 for sequential execution.
 #' @param uptake_type Character scalar controlling uptake model:
-#'   \code{"auto"} (default) chooses binary if \code{W \in \{0,1\}} and ordinal otherwise;
+#'   \code{"auto"} (default) chooses binary if \code{W in \{0,1\}} and ordinal otherwise;
 #'   \code{"binary"} enforces binary uptake model;
 #'   \code{"ordinal"} enforces ordinal/count uptake model.
+#' @param rho Numeric in (-1, 1); residual correlation between the latent
+#'   propensity scores for \eqn{W(1)} and \eqn{W(0)} in the bivariate ordinal
+#'   sampler. Only used when \code{uptake_type = "ordinal"}. Default is
+#'   \code{0} (conditionally independent potential treatments given X).
+#'   Positive values encode a tendency for units with high baseline treatment
+#'   to also have high treated-condition treatment; because this assumption is
+#'   not testable from the observed data, varying \code{rho} is a natural
+#'   sensitivity analysis.
 #' @param verbose Logical; print progress messages (default: FALSE).
 #'
 #' @details
@@ -209,6 +217,13 @@ resolve_and_validate_uptake <- function(W, uptake_type) {
 #' optional overlap trimming, and propensity augmentation of X.
 #' After preprocessing, model fitting dispatches to either binary or ordinal
 #' PS-BART chain runners based on \code{uptake_type}.
+#'
+#' For fits created from a formula or data.frame input, the returned object
+#' stores both a model-space covariate matrix and, when available, a raw
+#' covariate data.frame. The model-space representation is used internally for
+#' fitting and prediction; the raw representation is retained for downstream
+#' tasks that benefit from original factor/ordered-factor classes, such as
+#' \code{segment_heterogeneity()}.
 #'
 #' The model jointly estimates:
 #' \itemize{
@@ -241,7 +256,7 @@ resolve_and_validate_uptake <- function(W, uptake_type) {
 #' future::plan(future::multisession)
 #' }
 #'
-#' @return A list of class \code{"princebart"} containing posterior draws from
+#' @return A list of class \code{"prince_bart"} containing posterior draws from
 #'   all chains, including:
 #'   \itemize{
 #'     \item \code{imp}: Imputed latent quantities
@@ -249,8 +264,10 @@ resolve_and_validate_uptake <- function(W, uptake_type) {
 #'     \item \code{probs}: Posterior draws of probabilities/outcome means.
 #'     \item \code{check}: Ordinal diagnostic array (ordinal mode only).
 #'     \item \code{trees}: Fitted BART trees (if \code{keep_trees = TRUE}).
-#'     \item \code{data}: Processed input data, including covariates,
-#'       instrument propensity scores, and outcomes.
+#'     \item \code{data}: Stored input data, including \code{X_model}
+#'       (processed covariates used by the fitted model), \code{X_raw}
+#'       (raw covariates when available), \code{X} (compatibility alias to
+#'       \code{X_model}), instrument propensity scores, and outcomes.
 #'   }
 #'
 #' @examples
@@ -291,6 +308,7 @@ prince_BART <- function(
   n_trees = 200L,
   workers = NULL,
   uptake_type = c("auto", "binary", "ordinal"),
+  rho = 0,
   verbose = FALSE
 ) {
 
@@ -306,26 +324,32 @@ prince_BART <- function(
     init_w_poisson_lambda = 3,
     n_thin = 1L,
     n_threads = 1L,
-    monotonicity = TRUE,
-    rho = 0
+    monotonicity = TRUE
   )
 
   # Handle formula interface for both binary and ordinal
+  X_raw <- NULL
   if (!is.null(formula)) {
     parsed <- parse_psbart_formula(formula, data)
     X <- parsed$X
+    X_raw <- parsed$X_raw
     Y <- parsed$Y
     Z <- parsed$Z
     W <- parsed$W
+  } else if (!is.null(X)) {
+    X_raw <- normalize_raw_covariates(X)
   }
 
   # Input validation
   if (is.null(X) || is.null(Y) || is.null(Z) || is.null(W)) {
     stop("Must provide either a formula + data, or X, Y, Z, W directly")
   }
+  if (is.null(X_raw)) {
+    stop("Could not construct raw covariates (X_raw); please provide valid X/data inputs.")
+  }
 
   # Common preprocessing before dispatch
-  X <- validate_and_prepare_X(X)
+  X <- validate_and_prepare_X(X) #df > m > scaled(m)
   Y <- validate_binary(Y, "Y")
   Z <- validate_binary(Z, "Z")
 
@@ -372,6 +396,8 @@ prince_BART <- function(
       stop("Too few observations remain after instrument overlap trimming")
     }
     X <- X[keep, , drop = FALSE]
+    # make sure trim raw covariates (alternative save keep)
+    X_raw <- X_raw[keep, , drop = FALSE]
     Y <- Y[keep]
     Z <- Z[keep]
     W <- W[keep]
@@ -381,10 +407,6 @@ prince_BART <- function(
 
   # Append propensity to X in both modes
   X <- cbind(X, e = e)
-
-  # Preserve scaling attributes on X (for general_BART)
-  attr(X, "scaled:center") <- scaled_center
-  attr(X, "scaled:scale") <- scaled_scale
 
   # Determine number of workers
   if (is.null(workers)) {
@@ -440,7 +462,7 @@ prince_BART <- function(
       n_thin = ordinal_defaults$n_thin,
       n_threads = ordinal_defaults$n_threads,
       monotonicity = ordinal_defaults$monotonicity,
-      rho = ordinal_defaults$rho,
+      rho = rho,
       verbose = verbose,
       workers = workers
     )
@@ -472,7 +494,14 @@ prince_BART <- function(
   # Add back propensity (never scaled)
   X_unscaled <- cbind(X_unscaled, e = X[, "e"])
 
-  res$data <- list(X = X_unscaled, Y = Y, Z = Z, W = W, e = X[, "e"])
+  res$data <- list(
+    X_model = X_unscaled,
+    X_raw = X_raw,
+    Y = Y,
+    Z = Z,
+    W = W,
+    e = X[, "e"]
+  )
   res$scaling <- list(center = scaled_center, scale = scaled_scale)
   res$uptake_type <- uptake_type
   res$call <- match.call()

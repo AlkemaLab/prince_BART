@@ -16,13 +16,23 @@
 #' @param treated_only Logical; if \code{TRUE}, compute treatment effect only
 #'   among the treated units (ATT). Default is \code{FALSE} (ATE). For ordinal
 #'   fits, this parameter is accepted but may be ignored or handled differently.
+#' @param adaptive_levels Logical; for ordinal fits, if \code{TRUE} (default),
+#'   show level-specific effects up to a data-adaptive threshold based on
+#'   cumulative affected-unit mass.
+#' @param cumulative_mass Numeric in (0, 1]; for ordinal fits with adaptive
+#'   grouping, levels are shown individually until this cumulative mass is
+#'   reached. Default is \code{0.80}.
+#' @param level_threshold Optional integer threshold \code{K} for ordinal fits.
+#'   If supplied, levels \code{1..K} are shown individually and higher levels
+#'   are pooled as \code{"Level > K"}. This overrides adaptive grouping.
 #' @param ... Additional arguments (currently ignored).
 #'
 #' @return
 #' \code{print}: Invisibly returns the object.
 #' \code{summary}: Prints and invisibly returns a list with posterior summaries
-#'   appropriate to the modality.
-#' \code{coef}: Posterior summary of the requested estimand.
+#'   (including uncertainty and diagnostics) appropriate to the modality.
+#' \code{coef}: Named numeric vector of posterior mean estimates for the key
+#'   estimands.
 #'
 #' @examples
 #' \dontrun{
@@ -78,12 +88,22 @@ print.prince_bart <- function(x, ...) {
 summary.prince_bart <- function(object
   , type = c("mixed", "sample")
   , treated_only = FALSE
+  , adaptive_levels = TRUE
+  , cumulative_mass = 0.80
+  , level_threshold = NULL
   , ...
 ) {
   if (inherits(object, "prince_bart_binary")) {
     summary_prince_bart_binary(object, type = type, treated_only = treated_only)
   } else if (inherits(object, "prince_bart_ordinal")) {
-    summary_prince_bart_ordinal(object, type = type, treated_only = treated_only)
+    summary_prince_bart_ordinal(
+      object,
+      type = type,
+      treated_only = treated_only,
+      adaptive_levels = adaptive_levels,
+      cumulative_mass = cumulative_mass,
+      level_threshold = level_threshold
+    )
   } else {
     stop("Unknown prince_bart class: ", paste(class(object), collapse = ", "))
   }
@@ -95,12 +115,22 @@ summary.prince_bart <- function(object
 coef.prince_bart <- function(object
   , type = c("mixed", "sample")
   , treated_only = FALSE
+  , adaptive_levels = TRUE
+  , cumulative_mass = 0.80
+  , level_threshold = NULL
   , ...
 ) {
   if (inherits(object, "prince_bart_binary")) {
     coef_prince_bart_binary(object, type = type, treated_only = treated_only)
   } else if (inherits(object, "prince_bart_ordinal")) {
-    coef_prince_bart_ordinal(object, type = type, treated_only = treated_only)
+    coef_prince_bart_ordinal(
+      object,
+      type = type,
+      treated_only = treated_only,
+      adaptive_levels = adaptive_levels,
+      cumulative_mass = cumulative_mass,
+      level_threshold = level_threshold
+    )
   } else {
     stop("Unknown prince_bart class: ", paste(class(object), collapse = ", "))
   }
@@ -111,8 +141,25 @@ coef.prince_bart <- function(object
 # Internal helper functions for modality-specific summary/coef
 # =============================================================================
 
+
 #' @keywords internal
-summary_prince_bart_binary <- function(object, type = c("mixed", "sample"), treated_only = FALSE) {
+.posterior_mean_vector <- function(summary_tbl) {
+  summary_df <- as.data.frame(summary_tbl)
+  if (nrow(summary_df) == 0L) {
+    return(stats::setNames(numeric(0), character(0)))
+  }
+  if (!all(c("variable", "mean") %in% names(summary_df))) {
+    stop("Expected summary to contain 'variable' and 'mean' columns")
+  }
+  stats::setNames(
+    as.numeric(summary_df$mean), as.character(summary_df$variable)
+  )
+}
+
+#' @keywords internal
+summary_prince_bart_binary <- function(object
+  , type = c("mixed", "sample"), treated_only = FALSE
+) {
   type <- match.arg(type)
 
   cat("Principal Stratification BART Summary (Binary Uptake)\n")
@@ -145,7 +192,8 @@ summary_prince_bart_binary <- function(object, type = c("mixed", "sample"), trea
   cat("\n")
 
   cat(sprintf("%s %s for Compliers:\n", type_label, effect_label))
-  print(as.data.frame(effect_summary))
+  effect_summary_df <- as.data.frame(effect_summary)
+  print(effect_summary_df)
 
   invisible(list(
     strata = strata_summary,
@@ -156,7 +204,9 @@ summary_prince_bart_binary <- function(object, type = c("mixed", "sample"), trea
 }
 
 #' @keywords internal
-coef_prince_bart_binary <- function(object, type = c("mixed", "sample"), treated_only = FALSE) {
+coef_prince_bart_binary <- function(object
+  , type = c("mixed", "sample"), treated_only = FALSE
+) {
   type <- match.arg(type)
 
   if (type == "mixed") {
@@ -173,38 +223,90 @@ coef_prince_bart_binary <- function(object, type = c("mixed", "sample"), treated
     }
   }
 
-  result
+  result_df <- as.data.frame(result)
+  .posterior_mean_vector(result_df)
 }
 
 #' @keywords internal
-summary_prince_bart_ordinal <- function(object, type = c("mixed", "sample"), treated_only = FALSE) {
+summary_prince_bart_ordinal <- function(
+  object,
+  type = c("mixed", "sample"),
+  treated_only = FALSE,
+  adaptive_levels = TRUE,
+  cumulative_mass = 0.80,
+  level_threshold = NULL
+) {
   cat("Principal Stratification BART Summary (Ordinal Uptake)\n")
   cat("=====================================================\n\n")
-  cat("Type and treated_only parameters are currently interpreted in overall contrast computation.\n\n")
+  cat("Type and treated_only parameters are currently 
+  interpreted in overall contrast computation.\n\n")
 
-  # Delegate to ordinal estimand functions (will be implemented in estimands.R)
-  results <- estimands_ordinal_mixed(object)
+  results <- estimands_ordinal_mixed(
+    object,
+    adaptive_levels = adaptive_levels,
+    cumulative_mass = cumulative_mass,
+    level_threshold = level_threshold
+  )
 
-  cat("Complier-Like Contrast [W(0) - W(1) = 1]:\n")
+  grouping <- results$grouping
+
+  cat("Treatment effects among affected units\n")
+  cat("--------------------------------------\n\n")
+
+  cat("Mixed ATE among affected units:\n")
   print(as.data.frame(results$overall))
   cat("\n")
 
-  cat("Contrasts by Baseline Uptake W(0):\n")
+  cat("By treatment level affected by the instrument:\n")
   print(as.data.frame(results$by_w0))
 
+  cat("\n")
+  if (grouping$rule == "manual") {
+    cat(sprintf(
+      "Levels 1..%d are shown individually by user threshold;
+      higher levels are pooled when present.\n",
+      grouping$threshold
+    ))
+  } else if (grouping$rule == "adaptive") {
+    cat(sprintf(
+      "Levels are shown individually until they cover %.0f%% of affected units;
+       higher levels are pooled.\n",
+      100 * grouping$cumulative_mass
+    ))
+  } else {
+    cat("All observed affected levels are shown individually;
+    no pooling was applied.\n")
+  }
+
   if (any(is.na(results$overall$mean)) || any(is.na(results$by_w0$mean))) {
-    cat("\nNote: NA rows indicate no posterior units matched that contrast in some draws/strata.\n")
+    cat("\nNote: NA rows indicate no posterior units 
+    matched that contrast in some draws/strata.\n")
   }
 
   invisible(list(
     overall = results$overall,
-    by_w0 = results$by_w0
+    by_w0 = results$by_w0,
+    grouping = grouping
   ))
 }
 
 #' @keywords internal
-coef_prince_bart_ordinal <- function(object, type = c("mixed", "sample"), treated_only = FALSE) {
-  results <- estimands_ordinal_mixed(object)
-  # Return combined draws for posterior summary
-  c(results$overall, results$by_w0)
+coef_prince_bart_ordinal <- function(
+  object,
+  type = c("mixed", "sample"),
+  treated_only = FALSE,
+  adaptive_levels = TRUE,
+  cumulative_mass = 0.80,
+  level_threshold = NULL
+) {
+  results <- estimands_ordinal_mixed(
+    object,
+    adaptive_levels = adaptive_levels,
+    cumulative_mass = cumulative_mass,
+    level_threshold = level_threshold
+  )
+  c(
+    .posterior_mean_vector(results$overall),
+    .posterior_mean_vector(results$by_w0)
+  )
 }

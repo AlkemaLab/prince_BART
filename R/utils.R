@@ -5,7 +5,7 @@
 #' @param formula A formula with three parts separated by |
 #' @param data A data.frame containing the variables
 #'
-#' @return A list with components X, Y, Z, W
+#' @return A list with components X, X_raw, Y, Z, W
 #'
 #' @keywords internal
 parse_psbart_formula <- function(formula, data) {
@@ -24,7 +24,9 @@ parse_psbart_formula <- function(formula, data) {
   }
 
   # Extract outcome (Y)
-  Y <- stats::model.response(stats::model.frame(f, data = data, lhs = 1, rhs = 0))
+  Y <- stats::model.response(
+    stats::model.frame(f, data = data, lhs = 1, rhs = 0)
+  )
 
   # Extract covariates (X) - first RHS part
   X_formula <- stats::formula(f, lhs = 0, rhs = 1)
@@ -59,7 +61,54 @@ parse_psbart_formula <- function(formula, data) {
   }
   W <- as.vector(W)
 
-  list(X = X, Y = Y, Z = Z, W = W)
+  list(X = X, X_raw = as.data.frame(X_frame), Y = Y, Z = Z, W = W)
+}
+
+
+#' @keywords internal
+normalize_raw_covariates <- function(X) {
+  if (is.data.frame(X)) {
+    return(as.data.frame(X, stringsAsFactors = FALSE))
+  }
+  if (is.matrix(X)) {
+    return(as.data.frame(X, stringsAsFactors = FALSE))
+  }
+  stop("X must be a matrix or data.frame")
+}
+
+
+#' @keywords internal
+get_fit_covariates <- function(princebart_fit, type = c("model", "raw")) {
+  type <- match.arg(type)
+
+  if (is.null(princebart_fit$data)) {
+    return(NULL)
+  }
+
+  if (type == "model") {
+    return(princebart_fit$data$X_model)
+  }
+
+  princebart_fit$data$X_raw
+}
+
+
+#' @keywords internal
+validate_fit_covariate_contract <- function(princebart_fit, require_raw = TRUE) {
+  if (is.null(princebart_fit$data)) {
+    stop("Fit object is missing data storage; please refit with current prince_BART().")
+  }
+  if (is.null(princebart_fit$data$X_model)) {
+    stop("Fit object is missing data$X_model; please refit with current prince_BART().")
+  }
+  if (require_raw && is.null(princebart_fit$data$X_raw)) {
+    stop("Fit object is missing data$X_raw; please refit with current prince_BART().")
+  }
+  if (is.null(princebart_fit$scaling) ||
+      is.null(princebart_fit$scaling$center) ||
+      is.null(princebart_fit$scaling$scale)) {
+    stop("Fit object is missing scaling metadata; please refit with current prince_BART().")
+  }
 }
 
 

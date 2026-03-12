@@ -7,7 +7,7 @@
 get_mix_tau(p_arr, treated = NULL)
 }
 \arguments{
-\item{p_arr}{4D probability array from princebart fit.}
+\item{p_arr}{4D probability array from prince_bart fit.}
 
 \item{treated}{Optional logical vector indicating treated units.}
 }

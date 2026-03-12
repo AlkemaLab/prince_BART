@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">princeBART</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,8 +36,10 @@
 <li><a class="dropdown-item" href="../articles/introduction.html">Introduction</a></li>
     <li><a class="dropdown-item" href="../articles/generalizing.html">Generalizing</a></li>
     <li><a class="dropdown-item" href="../articles/simulation.html">Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/ordinal.html">Ordinal Uptake</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
@@ -60,7 +62,7 @@
                         <h4 data-toc-skip class="author">princeBART
 authors</h4>
             
-            <h4 data-toc-skip class="date">2026-01-22</h4>
+            <h4 data-toc-skip class="date">2026-03-12</h4>
       
 
       <div class="d-none name"><code>generalizing.Rmd</code></div>
@@ -83,10 +85,17 @@ survey)</li>
 <li>The target population may be missing some covariates collected in
 the source</li>
 </ul>
-<p>The key identifying assumption is that <strong>X captures all effect
-heterogeneity</strong>, meaning the conditional treatment effect given X
-is the same for compliers in the source study as in the general
-population.</p>
+<p>The key identifying assumptions are:</p>
+<ol style="list-style-type: decimal">
+<li><p><strong>Conditional transportability</strong>: The conditional
+treatment effect given X is the same in the source study and target
+population. That is, once we condition on observed covariates X, there
+are no remaining unmeasured effect modifiers that differ between the two
+in a way that changes the effect.</p></li>
+<li><p><strong>Included support</strong>: Covariate profiles observed in
+the target population must be adequately represented in the source
+data.</p></li>
+</ol>
 <div class="section level3">
 <h3 id="simulating-an-external-population">Simulating an External Population<a class="anchor" aria-label="anchor" href="#simulating-an-external-population"></a>
 </h3>
@@ -136,7 +145,9 @@ the PATE using Bayesian bootstrap for complex surveys</p>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># View results</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">pate_result</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">pate_result</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># saveRDS(pate_result, file = "inst/extdata/pate_result.rds")</span></span></code></pre></div>
 <p>The output shows: - <strong>PATE</strong>: The population average
 treatment effect estimate - <strong>95% CI</strong>: Credible interval
 incorporating both posterior and survey uncertainty - <strong>N
@@ -149,8 +160,7 @@ sensitivity analyses.</p>
 <h3 id="understanding-the-output">Understanding the Output<a class="anchor" aria-label="anchor" href="#understanding-the-output"></a>
 </h3>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">pate_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"pate_result.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
+<code class="sourceCode R"><span><span class="va">pate_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu">.extdata</span><span class="op">(</span><span class="st">"pate_result.rds"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Detailed summary</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">pate_result</span><span class="op">)</span></span>
@@ -158,9 +168,9 @@ sensitivity analyses.</p>
 <span><span class="co">#&gt; =========================</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Treatment Effect Estimate:</span></span>
-<span><span class="co">#&gt;   PATE:           0.097 </span></span>
-<span><span class="co">#&gt;   Posterior SD:   0.2115 </span></span>
-<span><span class="co">#&gt;   95% CI:        [-0.3139, 0.5053]</span></span>
+<span><span class="co">#&gt;   PATE:           0.0641 </span></span>
+<span><span class="co">#&gt;   Posterior SD:   0.2135 </span></span>
+<span><span class="co">#&gt;   95% CI:        [-0.3611, 0.5066]</span></span>
 <span><span class="co">#&gt;   N (subpop):     465 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; For sensitivity analyses, use:</span></span>
@@ -176,14 +186,23 @@ sensitivity analyses.</p>
 <p><img src="generalizing_files/figure-html/pate-summary-1.png" class="r-plt" width="100%"></p>
 </div>
 <div class="section level3">
-<h3 id="assessing-generalizability-overlap">Assessing Generalizability Overlap<a class="anchor" aria-label="anchor" href="#assessing-generalizability-overlap"></a>
+<h3 id="assessing-the-support-assumption-overlap-diagnostics">Assessing the Support Assumption: Overlap Diagnostics<a class="anchor" aria-label="anchor" href="#assessing-the-support-assumption-overlap-diagnostics"></a>
 </h3>
-<p>A natural concern is whether the source study population is
-representative of the target. Use <code><a href="../reference/general_BART_overlap.html">general_BART_overlap()</a></code> to
-compute the <strong>generalizability overlap score</strong>:</p>
+<p>One key threat to valid generalization is <strong>lack of included
+support</strong>—if target covariate profiles are poorly represented in
+the source data, results may depend on extrapolation into
+under-represented regions of covariate space. To assess this, use
+<code><a href="../reference/general_BART_overlap.html">general_BART_overlap()</a></code> to compute the
+<strong>generalizability overlap score</strong>:</p>
 <p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mtext mathvariant="normal">complier</mtext><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo>,</mo><mtext mathvariant="normal">in source</mtext><mo stretchy="true" form="postfix">)</mo></mrow><mo>×</mo><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><mtext mathvariant="normal">in source</mtext><mo stretchy="false" form="prefix">|</mo><mi>X</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">s = P(\text{complier}|X, \text{in source}) \times P(\text{in source}|X)</annotation></semantics></math></p>
 <p>This measures how similar external units are to compliers in the
-source study.</p>
+source study and whether their covariate profiles are well-represented
+in the source.</p>
+<p>For binary uptake fits, this is exactly the complier-based overlap
+diagnostic. For ordinal uptake fits, princeBART uses an affected-unit
+analogue
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>W</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">W(0)-W(1)=1</annotation></semantics></math>;
+this ordinal overlap diagnostic is currently experimental.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Compute overlap scores from the fitted general_pate object</span></span>
 <span><span class="va">overlap</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/general_BART_overlap.html">general_BART_overlap</a></span><span class="op">(</span></span>
@@ -191,17 +210,17 @@ source study.</p>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">overlap</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"overlap_result.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="va">overlap</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu">.extdata</span><span class="op">(</span><span class="st">"overlap_result.rds"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># View overlap metrics</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">overlap</span><span class="op">$</span><span class="va">overlap</span><span class="op">)</span></span>
 <span><span class="co">#&gt;        pi_c      pi_t       pi_s e_s_tilde</span></span>
-<span><span class="co">#&gt; 1 0.6119347 0.3007396 0.18403300 -1.944747</span></span>
-<span><span class="co">#&gt; 2 0.5771504 0.2446589 0.14120496 -2.265568</span></span>
-<span><span class="co">#&gt; 3 0.8282606 0.1836160 0.15208186 -2.177305</span></span>
-<span><span class="co">#&gt; 4 0.7009525 0.2792159 0.19571708 -1.867624</span></span>
-<span><span class="co">#&gt; 5 0.4785063 0.2015183 0.09642777 -2.704325</span></span>
-<span><span class="co">#&gt; 6 0.7498047 0.1568963 0.11764157 -2.478365</span></span>
+<span><span class="co">#&gt; 1 0.5033078 0.3320551 0.16712592 -2.017992</span></span>
+<span><span class="co">#&gt; 2 0.4488438 0.2074929 0.09313190 -2.693049</span></span>
+<span><span class="co">#&gt; 3 0.7593993 0.3066742 0.23288821 -1.600709</span></span>
+<span><span class="co">#&gt; 4 0.6001259 0.2628247 0.15772787 -2.087626</span></span>
+<span><span class="co">#&gt; 5 0.3569716 0.1845658 0.06588474 -3.071685</span></span>
+<span><span class="co">#&gt; 6 0.6501027 0.1296895 0.08431150 -2.803076</span></span>
 <span></span>
 <span><span class="co"># Plot overlap diagnostics</span></span>
 <span><span class="fu"><a href="../reference/plot_overlap.html">plot_overlap</a></span><span class="op">(</span><span class="va">overlap</span><span class="op">)</span></span></code></pre></div>
@@ -209,91 +228,104 @@ source study.</p>
 <p>The overlap plot shows the distribution of selection scores for: -
 Source study compliers (blue) - Target population units (red)</p>
 <p>Good overlap means the distributions substantially overlap.</p>
+<p>For ordinal uptake fits, this diagnostic uses an affected-unit
+analogue
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>W</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>W</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">W(0)-W(1)=1</annotation></semantics></math>
+in place of binary compliers and should be treated as experimental.</p>
 <div class="section level4">
-<h4 id="trimming-for-overlap">Trimming for Overlap<a class="anchor" aria-label="anchor" href="#trimming-for-overlap"></a>
+<h4 id="conservative-support-sensitivity-check">Conservative Support Sensitivity Check<a class="anchor" aria-label="anchor" href="#conservative-support-sensitivity-check"></a>
 </h4>
-<p>If some external units have poor overlap with source compliers, you
-can trim them from the PATE estimate using a threshold on the
-standardized selection score:</p>
+<p>If some target-population units have covariate profiles poorly
+represented in the source, you can assess sensitivity by recomputing the
+PATE under a conservative assumption for those units. This tests whether
+conclusions depend heavily on extrapolation:</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Trim observations with |e_s_tilde| &gt; 2 (i.e., outliers)</span></span>
+<code class="sourceCode R"><span><span class="co"># Identify and conservatively adjust for poorly supported target units</span></span>
+<span><span class="co"># Set treatment effect to zero for units with |e_s_tilde| &gt; 2 (standardized score)</span></span>
 <span><span class="va">overlap_trimmed</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/general_BART_overlap.html">general_BART_overlap</a></span><span class="op">(</span></span>
 <span>  object <span class="op">=</span> <span class="va">pate_result</span>,</span>
 <span>  threshold <span class="op">=</span> <span class="fl">2</span>,           <span class="co"># Standardized score threshold</span></span>
-<span>  overlap_value <span class="op">=</span> <span class="st">"zero"</span>,  <span class="co"># Set tau = 0 for trimmed units</span></span>
+<span>  overlap_value <span class="op">=</span> <span class="st">"zero"</span>,  <span class="co"># Conservative: assume tau = 0 for poorly supported units</span></span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">overlap_trimmed</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"overlap_trimmed_result.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co"># Compare trimmed vs original PATE</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Original PATE:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pate_result</span><span class="op">$</span><span class="va">pate</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Original PATE: 0.097</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Trimmed PATE: "</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">overlap_trimmed</span><span class="op">$</span><span class="va">pate_trimmed</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Trimmed PATE:  0.0354</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Units trimmed:"</span>, <span class="va">overlap_trimmed</span><span class="op">$</span><span class="va">n_trimmed</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Units trimmed: 333</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="va">overlap_trimmed</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu">.extdata</span><span class="op">(</span><span class="st">"overlap_trimmed_result.rds"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Compare conservative PATE vs original</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Original PATE (all units):"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pate_result</span><span class="op">$</span><span class="va">pate</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Original PATE (all units): 0.0641</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Conservative PATE (unsupported → 0):"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">overlap_trimmed</span><span class="op">$</span><span class="va">pate_trimmed</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Conservative PATE (unsupported → 0): 0.0333</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Units with weak support:"</span>, <span class="va">overlap_trimmed</span><span class="op">$</span><span class="va">n_trimmed</span>, <span class="st">"\n"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Units with weak support: 382</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level3">
-<h3 id="sensitivity-analysis-for-confounding">Sensitivity Analysis for Confounding<a class="anchor" aria-label="anchor" href="#sensitivity-analysis-for-confounding"></a>
+<h3 id="sensitivity-analysis-for-transportability">Sensitivity Analysis for Transportability<a class="anchor" aria-label="anchor" href="#sensitivity-analysis-for-transportability"></a>
 </h3>
-<p>If you’re concerned about unmeasured confounding, use
-<code><a href="../reference/general_BART_transportability.html">general_BART_transportability()</a></code> for weight-shift
-sensitivity analysis:</p>
+<p>Even with good overlap/support, the source and target populations may
+differ in <strong>unmeasured effect modifiers</strong>—covariates not
+captured in X. To assess sensitivity to this violation of conditional
+transportability, use <code><a href="../reference/general_BART_transportability.html">general_BART_transportability()</a></code> for a
+bounded weight-shift sensitivity analysis. This computes bounds on the
+PATE under the assumption that an unobserved effect modifier differs
+between populations by a specified amount.</p>
+<p>Run the sensitivity analysis across a range of gamma values to
+produce a sensitivity curve. This shows how robust the PATE is to
+unmeasured effect modification across source-target differences of
+varying severity:</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Sensitivity analysis with gamma = 2</span></span>
-<span><span class="co"># This computes bounds on PATE under worst-case weight perturbations</span></span>
-<span><span class="va">sens</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/general_BART_transportability.html">general_BART_transportability</a></span><span class="op">(</span></span>
-<span>  object <span class="op">=</span> <span class="va">pate_result</span>,</span>
-<span>  gamma <span class="op">=</span> <span class="fl">2</span>,        <span class="co"># Allow weights to vary by factor of 2</span></span>
-<span>  n_sample <span class="op">=</span> <span class="fl">100</span>,   <span class="co"># Number of posterior draws to use</span></span>
-<span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">sens</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"sensitivity_result.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co"># View sensitivity bounds</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Gamma ="</span>, <span class="va">sens</span><span class="op">$</span><span class="va">gamma</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Gamma = 2</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Lower bound:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">sens</span><span class="op">$</span><span class="va">lower</span><span class="op">$</span><span class="va">estimate</span>, <span class="fl">4</span><span class="op">)</span>, </span>
-<span>    <span class="st">"["</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">sens</span><span class="op">$</span><span class="va">lower</span><span class="op">$</span><span class="va">ci</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">","</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">sens</span><span class="op">$</span><span class="va">lower</span><span class="op">$</span><span class="va">ci</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">"]\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Lower bound: 0.046 [ -0.5496 , 0.5199 ]</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Upper bound:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">sens</span><span class="op">$</span><span class="va">upper</span><span class="op">$</span><span class="va">estimate</span>, <span class="fl">4</span><span class="op">)</span>,</span>
-<span>    <span class="st">"["</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">sens</span><span class="op">$</span><span class="va">upper</span><span class="op">$</span><span class="va">ci</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">","</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">sens</span><span class="op">$</span><span class="va">upper</span><span class="op">$</span><span class="va">ci</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span>, <span class="fl">4</span><span class="op">)</span>, <span class="st">"]\n"</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Upper bound: 0.2859 [ -0.2878 , 0.7789 ]</span></span></code></pre></div>
-<p>The sensitivity analysis shows bounds on the PATE under worst-case
-weight perturbations. The <code>gamma</code> parameter controls the
-maximum ratio by which observation weights can be shifted—larger values
-allow for more severe confounding. If the bounds exclude zero, the
-effect is robust to confounding of that magnitude.</p>
-<div class="section level4">
-<h4 id="multiple-sensitivity-parameters">Multiple Sensitivity Parameters<a class="anchor" aria-label="anchor" href="#multiple-sensitivity-parameters"></a>
-</h4>
-<p>You can run sensitivity analysis for multiple gamma values to create
-a sensitivity curve:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Sensitivity curve for multiple gamma values</span></span>
 <span><span class="va">gammas</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1.1</span>, <span class="fl">1.25</span>, <span class="fl">1.5</span>, <span class="fl">2</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="va">sens_results</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">gammas</span>, <span class="kw">function</span><span class="op">(</span><span class="va">g</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="fu"><a href="../reference/general_BART_transportability.html">general_BART_transportability</a></span><span class="op">(</span><span class="va">pate_result</span>, gamma <span class="op">=</span> <span class="va">g</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">sens_results</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"sensitivity_curve_results.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">sens_results</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu">.extdata</span><span class="op">(</span><span class="st">"sensitivity_curve_results.rds"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
 <span><span class="va">gammas</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1.1</span>, <span class="fl">1.25</span>, <span class="fl">1.5</span>, <span class="fl">2</span>, <span class="fl">3</span><span class="op">)</span></span>
 <span><span class="co"># Extract bounds</span></span>
 <span><span class="va">lower_bounds</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">sens_results</span>, <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span><span class="op">$</span><span class="va">lower</span><span class="op">$</span><span class="va">estimate</span><span class="op">)</span></span>
 <span><span class="va">upper_bounds</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">sens_results</span>, <span class="kw">function</span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="va">x</span><span class="op">$</span><span class="va">upper</span><span class="op">$</span><span class="va">estimate</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Plot sensitivity curve</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">gammas</span>, <span class="va">upper_bounds</span>, type <span class="op">=</span> <span class="st">"l"</span>, col <span class="op">=</span> <span class="st">"red"</span>, </span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">gammas</span>, <span class="va">upper_bounds</span>, type <span class="op">=</span> <span class="st">"l"</span>, col <span class="op">=</span> <span class="st">"red"</span>, lwd <span class="op">=</span> <span class="fl">2</span>,</span>
 <span>     ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/range.html" class="external-link">range</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">lower_bounds</span>, <span class="va">upper_bounds</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>     xlab <span class="op">=</span> <span class="st">"Gamma"</span>, ylab <span class="op">=</span> <span class="st">"PATE Bounds"</span>, main <span class="op">=</span> <span class="st">"Sensitivity Analysis"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="va">gammas</span>, <span class="va">lower_bounds</span>, col <span class="op">=</span> <span class="st">"blue"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span>h <span class="op">=</span> <span class="fl">0</span>, lty <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span>h <span class="op">=</span> <span class="va">pate_result</span><span class="op">$</span><span class="va">pate</span>, lty <span class="op">=</span> <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"topright"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Upper"</span>, <span class="st">"Lower"</span>, <span class="st">"Null"</span>, <span class="st">"Point est."</span><span class="op">)</span>, </span>
-<span>       col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span>, <span class="st">"black"</span>, <span class="st">"black"</span><span class="op">)</span>, lty <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span>     xlab <span class="op">=</span> <span class="st">"Gamma (max weight ratio)"</span>, ylab <span class="op">=</span> <span class="st">"PATE Bounds"</span>, </span>
+<span>     main <span class="op">=</span> <span class="st">"Sensitivity to Unmeasured Effect Modifiers"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="va">gammas</span>, <span class="va">lower_bounds</span>, col <span class="op">=</span> <span class="st">"blue"</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span>h <span class="op">=</span> <span class="fl">0</span>, lty <span class="op">=</span> <span class="fl">2</span>, col <span class="op">=</span> <span class="st">"gray"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span>h <span class="op">=</span> <span class="va">pate_result</span><span class="op">$</span><span class="va">pate</span>, lty <span class="op">=</span> <span class="fl">3</span>, col <span class="op">=</span> <span class="st">"dark gray"</span>, lwd <span class="op">=</span> <span class="fl">1.5</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"topright"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Upper bound"</span>, <span class="st">"Lower bound"</span>, <span class="st">"Null effect"</span>, <span class="st">"Point estimate"</span><span class="op">)</span>, </span>
+<span>       col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"red"</span>, <span class="st">"blue"</span>, <span class="st">"gray"</span>, <span class="st">"dark gray"</span><span class="op">)</span>, lty <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">3</span><span class="op">)</span>, lwd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">2</span>, <span class="fl">1</span>, <span class="fl">1.5</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p><img src="generalizing_files/figure-html/sensitivity-curve-results-1.png" class="r-plt" width="100%"></p>
 </div>
+<div class="section level3">
+<h3 id="summary-two-robustness-checks-for-generalization">Summary: Two Robustness Checks for Generalization<a class="anchor" aria-label="anchor" href="#summary-two-robustness-checks-for-generalization"></a>
+</h3>
+<p>The vignette has illustrated two distinct robustness checks that
+address the two key identifying assumptions:</p>
+<p><strong>Support Sensitivity Check</strong> (via overlap diagnostics
+and conservative adjustment) - <strong>Assumption tested</strong>:
+Included support - <strong>Question</strong>: Are we extrapolating into
+covariate regions poorly represented in the source? -
+<strong>Evidence</strong>: Threshold selected based on standardized
+selection score; PATE recomputed assuming zero effect for poorly
+supported target units - <strong>Interpretation</strong>: Large drop in
+PATE suggests strong dependence on extrapolation; modest drop suggests
+robustness to extrapolation risk</p>
+<p><strong>Transportability Sensitivity Check</strong> (via weight-shift
+bounds) - <strong>Assumption tested</strong>: Conditional
+transportability - <strong>Question</strong>: How large would
+source-target differences in unmeasured effect modifiers need to be to
+materially change the PATE? - <strong>Evidence</strong>: Sensitivity
+curve showing PATE bounds across increasing values of gamma (maximum
+weight ratio) - <strong>Interpretation</strong>: If bounds remain tight
+across large gamma values and/or exclude zero, results are robust to
+unmeasured effect modification; if bounds widen dramatically or cross
+zero at small gamma, findings are fragile</p>
+<p>Both checks are valuable for a complete assessment of
+generalizability.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

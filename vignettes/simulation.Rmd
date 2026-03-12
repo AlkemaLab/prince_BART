@@ -17,6 +17,17 @@ knitr::opts_chunk$set(
   fig.width = 7,
   fig.height = 5
 )
+.extdata <- function(fname) {
+  f <- system.file("extdata", fname, package = "princeBART")
+  if (nzchar(f) && file.exists(f)) return(f)
+  vdir <- tryCatch(
+    dirname(normalizePath(knitr::current_input())),
+    error = function(e) getwd()
+  )
+  f <- normalizePath(file.path(vdir, "..", "inst", "extdata", fname), mustWork = FALSE)
+  if (file.exists(f)) return(f)
+  stop("Cannot find extdata/", fname)
+}
 ```
 
 ## Overview
@@ -220,7 +231,9 @@ mixed_complier_effect <- function(fitval) {
 # PStrata fitter (uses pre-compiled model)
 pstrata_fitter <- function(data, mcmc_iters = 200, pre_fit = NULL) {
   psobj <- ps_obj(data)
-  ps_fit <- PStrata(psobj, cores = 1, chains = 1, iter = mcmc_iters, fit = pre_fit)
+  ps_fit <- PStrata(
+    psobj, cores = 1, chains = 1, iter = mcmc_iters, fit = pre_fit
+  )
   mixed_complier_effect(fitted_pstrata(ps_fit))
 }
 
@@ -287,7 +300,7 @@ cvg <- function(res) {
 
 ```{r run-simulation}
 # Simulation parameters (reduced for vignette)
-m <- 20          # iterations (paper uses 400)
+m <- 2          # iterations (paper uses 400)
 designs <- c("A", "C")
 deltas <- c(0.02, 0.05)
 ns <- 400
@@ -297,10 +310,14 @@ ns <- 400
 ```{r run-simulation-main, message=FALSE, warning=FALSE, results='hide', eval=FALSE }
 set.seed(0203)
 
-# Using too many multisession workers can overwhelm laptops and increases the
-# chance of interruptions/timeouts. Keep this modest by default.
-workers <- min(10L, future::availableCores())
-plan(multisession, workers = workers)
+# Save and restore plan so worker teardown happens before knitr exits.
+old_plan <- future::plan()
+on.exit(future::plan(old_plan), add = TRUE)
+
+# Heavy Stan/BART calls inside each worker can exhaust memory if worker count
+# is too high. Keep this conservative for stable vignette rendering.
+workers <- min(2L, future::availableCores())
+future::plan(future::multisession, workers = workers)
 
 # Compile PStrata Stan model once
 cat("Compiling PStrata model...\n")
@@ -337,8 +354,7 @@ for (design in designs) {
     )
   }
 }
-# Save for latter use
-saveRDS(sim_results, file = "vignettes/sim_results.rds")
+# To regenerate: saveRDS(sim_results, file = "inst/extdata/sim_results.rds")
 ```
 
 ## Results
@@ -346,11 +362,8 @@ saveRDS(sim_results, file = "vignettes/sim_results.rds")
 ### Compile Metrics
 
 ```{r compile-metrics}
-# Load precomputed results if available
-
-if (file.exists(system.file("extdata", "sim_results.rds", package = "princeBART"))) {
-  sim_results <- readRDS(system.file("extdata", "sim_results.rds", package = "princeBART"))
-}
+# Load precomputed results
+sim_results <- readRDS(.extdata("sim_results.rds"))
 
 results_df <- expand.grid(design = designs, delta = deltas) |>
   rowwise() |>

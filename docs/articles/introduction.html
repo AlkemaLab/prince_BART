@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">princeBART</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,8 +36,10 @@
 <li><a class="dropdown-item" href="../articles/introduction.html">Introduction</a></li>
     <li><a class="dropdown-item" href="../articles/generalizing.html">Generalizing</a></li>
     <li><a class="dropdown-item" href="../articles/simulation.html">Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/ordinal.html">Ordinal Uptake</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
@@ -60,7 +62,7 @@
                         <h4 data-toc-skip class="author">princeBART
 authors</h4>
             
-            <h4 data-toc-skip class="date">2026-01-22</h4>
+            <h4 data-toc-skip class="date">2026-03-12</h4>
       
 
       <div class="d-none name"><code>introduction.Rmd</code></div>
@@ -93,12 +95,13 @@ relationships</li>
 <p>We observe:</p>
 <ul>
 <li>
-<strong>Z</strong>: Instrument (e.g., randomized assignment,
+<strong>Z</strong>: Binary instrument (e.g., randomized assignment,
 geographic variation, policy change)</li>
 <li>
-<strong>W</strong>: Endogenous treatment/exposure of interest</li>
+<strong>W</strong>: Binary endogenous treatment/exposure of
+interest</li>
 <li>
-<strong>Y</strong>: Outcome</li>
+<strong>Y</strong>: Binary outcome</li>
 <li>
 <strong>X</strong>: Covariates</li>
 </ul>
@@ -172,7 +175,9 @@ heterogeneity to demonstrate .</p>
 <span></span>
 <span><span class="co"># Principal strata (latent)</span></span>
 <span><span class="co"># Probability of being a complier depends on covariates</span></span>
-<span><span class="va">p_complier</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">1.2</span> <span class="op">+</span> <span class="fl">0.03</span> <span class="op">*</span> <span class="va">X</span><span class="op">$</span><span class="va">age</span> <span class="op">+</span> <span class="fl">0.12</span> <span class="op">*</span> <span class="va">X</span><span class="op">$</span><span class="va">education</span> <span class="op">-</span> <span class="fl">0.00001</span> <span class="op">*</span> <span class="va">X</span><span class="op">$</span><span class="va">income</span><span class="op">)</span></span>
+<span><span class="va">p_complier</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span></span>
+<span>  <span class="op">-</span><span class="fl">1.2</span> <span class="op">+</span> <span class="fl">0.03</span> <span class="op">*</span> <span class="va">X</span><span class="op">$</span><span class="va">age</span> <span class="op">+</span> <span class="fl">0.12</span> <span class="op">*</span> <span class="va">X</span><span class="op">$</span><span class="va">education</span> <span class="op">-</span> <span class="fl">0.00001</span> <span class="op">*</span> <span class="va">X</span><span class="op">$</span><span class="va">income</span></span>
+<span><span class="op">)</span></span>
 <span><span class="va">p_always</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">2</span> <span class="op">+</span> <span class="fl">0.01</span> <span class="op">*</span> <span class="va">X</span><span class="op">$</span><span class="va">age</span><span class="op">)</span></span>
 <span><span class="va">p_never</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">pmax</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="va">p_complier</span> <span class="op">-</span> <span class="va">p_always</span>, <span class="fl">0</span><span class="op">)</span></span>
 <span><span class="va">denom</span> <span class="op">&lt;-</span> <span class="va">p_complier</span> <span class="op">+</span> <span class="va">p_never</span> <span class="op">+</span> <span class="va">p_always</span></span>
@@ -237,7 +242,8 @@ heterogeneity to demonstrate .</p>
 <span>  n_samples <span class="op">=</span> <span class="fl">200</span>,</span>
 <span>  instrument_overlap <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.1</span>, <span class="fl">0.9</span><span class="op">)</span>,</span>
 <span>  keep_trees <span class="op">=</span> <span class="cn">TRUE</span>  <span class="co"># Save trees for generalization</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co"># saveRDS(fit, file = "inst/extdata/fit_intro.rds")</span></span></code></pre></div>
 </div>
 </div>
 <div class="section level2">
@@ -249,7 +255,7 @@ conditional complier effects over the empirical covariate distribution—
 and can optionally be restricted to treated compliers (treated_only =
 TRUE).</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"fit_intro.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu">.extdata</span><span class="op">(</span><span class="st">"fit_intro.rds"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Print summary</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
@@ -259,42 +265,45 @@ TRUE).</p>
 <span><span class="co">#&gt; Iterations:   200 </span></span>
 <span><span class="co">#&gt; Units:        800 </span></span>
 <span><span class="co">#&gt; Trees:        saved</span></span>
+<span><span class="co">#&gt; Uptake model:  Binary uptake (3 principal strata: complier, never-taker, always-taker) </span></span>
 <span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Use summary() or coef() to extract treatment effects.</span></span>
+<span><span class="co">#&gt; Use summary() or coef() to extract contrasts and treatment effects.</span></span>
 <span></span>
 <span><span class="co"># Summary shows strata distribution and treatment effect</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Principal Stratification BART Summary</span></span>
-<span><span class="co">#&gt; =====================================</span></span>
+<span><span class="co">#&gt; Principal Stratification BART Summary (Binary Uptake)</span></span>
+<span><span class="co">#&gt; =====================================================</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Principal Strata Distribution:</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 10</span></span></span>
-<span><span class="co">#&gt;   variable       mean median     sd    mad    q5   q95  rhat ess_bulk ess_tail</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> compliers     0.690  0.690 0.023<span style="text-decoration: underline;">3</span> 0.024<span style="text-decoration: underline;">3</span> 0.651 0.727  1.03     84.3     216.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> never-takers  0.153  0.152 0.016<span style="text-decoration: underline;">2</span> 0.015<span style="text-decoration: underline;">7</span> 0.126 0.178  1.00    125.      215.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> always-takers 0.158  0.158 0.016<span style="text-decoration: underline;">8</span> 0.017<span style="text-decoration: underline;">5</span> 0.131 0.185  1.04    112.      194.</span></span>
+<span><span class="co">#&gt;        variable      mean    median         sd        mad        q5       q95</span></span>
+<span><span class="co">#&gt; 1     compliers 0.1580609 0.1572488 0.01714859 0.01633383 0.1312092 0.1878328</span></span>
+<span><span class="co">#&gt; 2  never-takers 0.1528376 0.1539161 0.01767777 0.01817189 0.1239488 0.1809148</span></span>
+<span><span class="co">#&gt; 3 always-takers 0.6891015 0.6903201 0.02381659 0.02292560 0.6455071 0.7293826</span></span>
+<span><span class="co">#&gt;        rhat ess_bulk ess_tail</span></span>
+<span><span class="co">#&gt; 1 0.9984064 157.8097 210.9703</span></span>
+<span><span class="co">#&gt; 2 1.0179362 114.5603 222.4572</span></span>
+<span><span class="co">#&gt; 3 1.0105493 114.0515 162.7616</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Mixed ATE for Compliers:</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 5 × 10</span></span></span>
-<span><span class="co">#&gt;   variable       mean median     sd    mad      q5   q95  rhat ess_bulk ess_tail</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Y(0) | comp… 0.727  0.728  0.031<span style="text-decoration: underline;">7</span> 0.031<span style="text-decoration: underline;">3</span>  0.674  0.777 1.00      130.     188.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Y(1) | comp… 0.759  0.761  0.033<span style="text-decoration: underline;">0</span> 0.030<span style="text-decoration: underline;">8</span>  0.702  0.809 1.03      111.     215.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> Y(0) | neve… 0.549  0.553  0.062<span style="text-decoration: underline;">2</span> 0.058<span style="text-decoration: underline;">4</span>  0.449  0.649 1.04      101.     188.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Y(1) | alwa… 0.662  0.659  0.057<span style="text-decoration: underline;">0</span> 0.057<span style="text-decoration: underline;">7</span>  0.570  0.761 0.999     111.     205.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> MATE | comp… 0.032<span style="text-decoration: underline;">6</span> 0.030<span style="text-decoration: underline;">6</span> 0.045<span style="text-decoration: underline;">1</span> 0.041<span style="text-decoration: underline;">7</span> -<span style="color: #BB0000;">0.042</span><span style="color: #BB0000; text-decoration: underline;">6</span> 0.108 1.01      128.     215.</span></span>
+<span><span class="co">#&gt;                  variable       mean     median         sd        mad</span></span>
+<span><span class="co">#&gt; 1        Y(0) | compliers 0.73322582 0.73407324 0.03856802 0.03797022</span></span>
+<span><span class="co">#&gt; 2        Y(1) | compliers 0.77956670 0.78263515 0.03676101 0.03697398</span></span>
+<span><span class="co">#&gt; 3     Y(0) | never-takers 0.55011160 0.55112361 0.06096632 0.06687562</span></span>
+<span><span class="co">#&gt; 4    Y(1) | always-takers 0.64670444 0.64782591 0.05942009 0.06000187</span></span>
+<span><span class="co">#&gt; 5 Mixed ATE for compliers 0.04634088 0.04738813 0.05437129 0.05480359</span></span>
+<span><span class="co">#&gt;            q5       q95     rhat ess_bulk ess_tail</span></span>
+<span><span class="co">#&gt; 1  0.66657103 0.7963835 1.012367 116.7625 173.3331</span></span>
+<span><span class="co">#&gt; 2  0.71348203 0.8353146 1.009086 129.2766 241.4299</span></span>
+<span><span class="co">#&gt; 3  0.45027727 0.6473191 1.000831 117.7128 197.4064</span></span>
+<span><span class="co">#&gt; 4  0.54197792 0.7376099 1.005648 128.5477 250.6533</span></span>
+<span><span class="co">#&gt; 5 -0.04475292 0.1349096 1.004749 131.1382 182.5737</span></span>
 <span></span>
 <span><span class="co"># Mixed ATE for Compliers (default)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 5 × 10</span></span></span>
-<span><span class="co">#&gt;   variable       mean median     sd    mad      q5   q95  rhat ess_bulk ess_tail</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Y(0) | comp… 0.727  0.728  0.031<span style="text-decoration: underline;">7</span> 0.031<span style="text-decoration: underline;">3</span>  0.674  0.777 1.00      130.     188.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Y(1) | comp… 0.759  0.761  0.033<span style="text-decoration: underline;">0</span> 0.030<span style="text-decoration: underline;">8</span>  0.702  0.809 1.03      111.     215.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> Y(0) | neve… 0.549  0.553  0.062<span style="text-decoration: underline;">2</span> 0.058<span style="text-decoration: underline;">4</span>  0.449  0.649 1.04      101.     188.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> Y(1) | alwa… 0.662  0.659  0.057<span style="text-decoration: underline;">0</span> 0.057<span style="text-decoration: underline;">7</span>  0.570  0.761 0.999     111.     205.</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> MATE | comp… 0.032<span style="text-decoration: underline;">6</span> 0.030<span style="text-decoration: underline;">6</span> 0.045<span style="text-decoration: underline;">1</span> 0.041<span style="text-decoration: underline;">7</span> -<span style="color: #BB0000;">0.042</span><span style="color: #BB0000; text-decoration: underline;">6</span> 0.108 1.01      128.     215.</span></span></code></pre></div>
+<span><span class="co">#&gt;        Y(0) | compliers        Y(1) | compliers     Y(0) | never-takers </span></span>
+<span><span class="co">#&gt;              0.73322582              0.77956670              0.55011160 </span></span>
+<span><span class="co">#&gt;    Y(1) | always-takers Mixed ATE for compliers </span></span>
+<span><span class="co">#&gt;              0.64670444              0.04634088</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="effect-heterogeneity-by-segments">Effect Heterogeneity by Segments<a class="anchor" aria-label="anchor" href="#effect-heterogeneity-by-segments"></a>
@@ -316,10 +325,10 @@ heterogeneity.</p>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">res</span><span class="op">$</span><span class="va">contrast</span><span class="op">$</span><span class="va">summary</span></span>
-<span><span class="co">#&gt;        mean        sd    ci_lower  ci_upper p_gt0</span></span>
-<span><span class="co">#&gt; 5% 0.175453 0.1216093 -0.03224862 0.3835347  0.92</span></span>
+<span><span class="co">#&gt;        mean        sd    ci_lower ci_upper p_gt0</span></span>
+<span><span class="co">#&gt; 1 0.1830328 0.1233037 -0.03709192 0.379174  0.93</span></span>
 <span><span class="va">res</span><span class="op">$</span><span class="va">plot</span><span class="op">$</span><span class="va">diff</span></span></code></pre></div>
-<p><img src="introduction_files/figure-html/heterogeneity-1.png" class="r-plt" width="100%"></p>
+<p><img src="introduction_files/figure-html/heterogeneity-1.png" class="r-plt" alt="Difference in estimated complier effects across covariate-defined segments from a shallow tree summary." width="100%"></p>
 <p>The segment-level summaries in res$effects correspond to
 subgroup-specific average effects among compliers, obtained by averaging
 conditional effects within each covariate-defined segment. Differences
@@ -329,20 +338,22 @@ constructed post hoc to summarize heterogeneity in the posterior
 distribution of CATE_C(x).</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">res</span><span class="op">$</span><span class="va">effects</span></span>
-<span><span class="co">#&gt;                       segment    mean     sd ci_lower ci_upper p_gt0   n</span></span>
-<span><span class="co">#&gt;                       overall  0.0326 0.0451  -0.0426    0.108 0.790 800</span></span>
-<span><span class="co">#&gt;                   age &gt;= 51.2 -0.0461 0.0876  -0.1868    0.106 0.290  97</span></span>
-<span><span class="co">#&gt;      age &gt;= 39.1 &amp; age &lt; 51.2  0.0127 0.0619  -0.0993    0.107 0.590 322</span></span>
-<span><span class="co">#&gt;   age &lt; 39.1 &amp; income &lt; 51.1K  0.0245 0.0767  -0.0940    0.154 0.637 199</span></span>
-<span><span class="co">#&gt;  age &lt; 39.1 &amp; income &gt;= 51.1K  0.1294 0.0808   0.0108    0.277 0.965 182</span></span>
-<span><span class="co">#&gt;  n_complier</span></span>
-<span><span class="co">#&gt;       551.6</span></span>
-<span><span class="co">#&gt;        74.7</span></span>
-<span><span class="co">#&gt;       222.3</span></span>
-<span><span class="co">#&gt;       137.4</span></span>
-<span><span class="co">#&gt;       117.2</span></span>
+<span><span class="co">#&gt;                                    segment     mean     sd ci_lower ci_upper</span></span>
+<span><span class="co">#&gt;                                    overall  0.04523 0.0457 -0.02925    0.120</span></span>
+<span><span class="co">#&gt;               income &lt; 51.1K &amp; age &gt;= 48.8 -0.07388 0.0956 -0.21647    0.104</span></span>
+<span><span class="co">#&gt;  income &lt; 51.1K &amp; age &gt;= 32.1 &amp; age &lt; 48.8  0.00568 0.0633 -0.09944    0.116</span></span>
+<span><span class="co">#&gt;                income &lt; 51.1K &amp; age &lt; 32.1  0.09191 0.1041 -0.07409    0.257</span></span>
+<span><span class="co">#&gt;              income &gt;= 51.1K &amp; age &gt;= 47.2  0.03339 0.0753 -0.09374    0.151</span></span>
+<span><span class="co">#&gt;               income &gt;= 51.1K &amp; age &lt; 47.2  0.10916 0.0709 -0.00932    0.231</span></span>
+<span><span class="co">#&gt;  p_gt0   n n_group</span></span>
+<span><span class="co">#&gt;  0.833 800   551.3</span></span>
+<span><span class="co">#&gt;  0.215  68    53.5</span></span>
+<span><span class="co">#&gt;  0.520 266   191.3</span></span>
+<span><span class="co">#&gt;  0.815  88    61.3</span></span>
+<span><span class="co">#&gt;  0.667  83    60.6</span></span>
+<span><span class="co">#&gt;  0.920 295   184.5</span></span>
 <span><span class="va">res</span><span class="op">$</span><span class="va">plot</span><span class="op">$</span><span class="va">effect</span></span></code></pre></div>
-<p><img src="introduction_files/figure-html/heterogeneity_effects-1.png" class="r-plt" width="100%"></p>
+<p><img src="introduction_files/figure-html/heterogeneity_effects-1.png" class="r-plt" alt="Estimated subgroup-specific average complier effects for each identified segment." width="100%"></p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

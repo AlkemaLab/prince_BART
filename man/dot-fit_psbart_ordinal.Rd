@@ -64,7 +64,7 @@ A list with elements:
 \item{imputed}{Array \code{(n_samples, n, 2)} for sampled \code{w0}, \code{w1}.}
 \item{probs}{Array \code{(n_samples, n, 2)} for \code{m_y0}, \code{m_y1}.}
 \item{check}{Array \code{(n_samples, n, 2)} with posterior predictive
- draws for \code{w0}, \code{w1} diagnostics.}
+draws for \code{w0}, \code{w1} diagnostics.}
 \item{trees}{Tree structures when \code{save_trees = TRUE}.}
 }
 \description{

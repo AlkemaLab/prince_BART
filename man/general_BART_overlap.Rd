@@ -26,7 +26,8 @@ Either \code{"zero"} (set to 0) or \code{"NA"} (exclude completely). Default is 
 \value{
 A list with components:
 \describe{
-\item{overlap}{Data frame with overlap metrics: pi_c, pi_t, pi_s, e_s_tilde}
+\item{overlap}{Data frame with overlap metrics: pi_c, pi_t, pi_s, e_s_tilde
+where pi_c is group probability (complier for binary; affected for ordinal)}
 \item{e_s_tilde_source}{Standardized selection scores for source data}
 \item{n_trimmed}{Number of observations trimmed (if threshold used)}
 \item{pate_trimmed}{Trimmed PATE estimate (if threshold used)}
@@ -36,6 +37,8 @@ A list with components:
 \description{
 Compute generalizability overlap scores and optionally trim observations
 with low overlap to produce a trimmed PATE estimate.
+For binary fits, overlap is based on complier similarity. For ordinal fits,
+overlap uses an affected-unit analogue (W(0)-W(1)=1), which is experimental.
 }
 \examples{
 \dontrun{
