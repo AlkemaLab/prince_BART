@@ -1,20 +1,25 @@
 # This is required for R CMD check to suppress visible binding notes for NSE variables
-if (getRversion() >= "2.15.1") utils::globalVariables(c("segment_label", "is_overall", "ci_lower", "ci_upper", "d"))
+if (getRversion() >= "2.15.1") utils::globalVariables(
+  c("segment_label", "is_overall", "ci_lower", "ci_upper", "d")
+)
 #' Effect Heterogeneity by Segments
 #'
 #' Partition the sample into covariate-defined segments and summarize how
-#' estimated complier effects vary across segments, following the heterogeneity
-#' analysis in the Prince BART paper.
+#' estimated latent-group effects vary across segments, following the
+#' heterogeneity analysis in the Prince BART paper.
 #'
 #' @param princebart A fitted object from \code{prince_BART}.
 #' @param data Optional data.frame of covariates used for segmentation. If NULL,
-#'   uses \code{princebart$data$X}.
+#'   uses stored raw covariates \code{princebart$data$X_raw}.
 #' @param vars Optional character vector of covariate names to include in the
 #'   segmentation model. If NULL, uses all covariates in \code{data}.
 #' @param rpart_control An \code{rpart.control} object for tree fitting.
-#' @param min_compliers_bucket Minimum effective complier count for pruning
-#'   (sum of posterior mean complier probabilities within a segment). Default is 100.
-#' @param ci_level Credible interval level (e.g., 0.9 for 90% credible intervals).
+#' @param min_compliers_bucket Minimum effective latent-group count for pruning
+#'   (sum of posterior mean latent-group
+#' membership probabilities within a segment).
+#'   Default is 100.
+#' @param ci_level Credible interval level
+#' (e.g., 0.9 for 90% credible intervals).
 #'   Default is 0.9.
 #' @param plot Logical; if TRUE, return ggplot2 objects for segment effects
 #'   (and the max--min contrast plot if \code{contrast = TRUE}).
@@ -23,39 +28,55 @@ if (getRversion() >= "2.15.1") utils::globalVariables(c("segment_label", "is_ove
 #'
 #' @details
 #' This function fits a shallow \code{rpart} regression tree to posterior mean
-#' conditional complier effects \eqn{\mathrm{CATE}_C(x)} and assigns each unit to
-#' a terminal-node segment. Tree fitting is weighted by each unit's posterior mean
-#' complier probability, so that splits emphasize regions of the covariate space
-#' with more compliers.
+#' conditional latent-group effects and assigns each unit to
+#' a terminal-node segment. Tree fitting is 
+#' weighted by each unit's posterior mean
+#' latent-group membership probability, so that splits emphasize regions of the
+#' covariate space with more relevant units.
+#'
+#' Raw covariates stored in the fitted object are used by default so that factor
+#' and ordered-factor variables can be represented more interpretably in segment
+#' labels.
 #'
 #' For each segment, the function aggregates posterior draws of
-#' \eqn{\mathrm{CATE}_C(x)} using complier-probability weights to obtain a
-#' segment-specific average effect among compliers (an \emph{MCATE_C} estimand in
-#' the paper). These segment-level summaries are mixed (sample-based) estimands:
-#' they average conditional effects over the empirical covariate distribution within
-#' each segment rather than defining new population-level causal parameters.
+#' conditional effects using latent-group membership weights to obtain a
+#' segment-specific average effect for the relevant latent group.
+#' For binary fits,
+#' this reproduces segment-specific mixed effects among compliers.
+#' For ordinal fits,
+#' this targets segment-specific mixed effects among affected units defined by
+#' \eqn{W(0)-W(1)=1}. These segment-level summaries are mixed (sample-based)
+#' estimands: they average conditional effects over the empirical covariate
+#' distribution within each segment rather than defining new population-level
+#' causal parameters.
 #'
-#' The main segment summaries are returned in \code{res$effects} and visualized in
-#' \code{res$plot$effect} (if \code{plot = TRUE}).
+#' The main segment summaries are returned in \code{res$effects} and
+#' visualized in \code{res$plot$effect} (if \code{plot = TRUE}).
 #'
-#' Optionally, segments with small effective numbers of compliers can be pruned/merged
-#' for stability. If \code{contrast = TRUE}, heterogeneity is summarized by the
-#' posterior distribution of the difference between the segments with the largest and
-#' smallest estimated mean effects. Numerical results are in \code{res$contrast$summary}
-#' and the histogram is in \code{res$plot$diff} (if \code{plot = TRUE}).
+#' Optionally, segments with small effective latent-group counts can be
+#' pruned/merged for stability. If \code{contrast = TRUE}, heterogeneity is
+#' summarized by the posterior distribution of the difference between the
+#' segments with the largest and smallest estimated mean effects. Numerical
+#' results are in \code{res$contrast$summary} and the histogram is in
+#' \code{res$plot$diff} (if \code{plot = TRUE}).
 #'
 #' @return A list with components:
 #' \item{tree}{Fitted (and optionally pruned) rpart tree.}
-#' \item{segment_data}{Input data with \code{cate} (posterior mean \eqn{\mathrm{CATE}_C(x)}),
-#'   \code{w} (posterior mean complier probability), and \code{segment}.}
-#' \item{effects}{Segment-level effect summaries (MCATE_C): posterior mean, sd, credible
-#'   interval bounds, and \code{p_gt0}, plus \code{n} (segment size) and \code{n_complier}
-#'   (estimated complier count).}
+#' \item{segment_data}{Input data with \code{cate} (posterior mean unit-level
+#'   conditional effect), \code{w} (posterior mean latent-group membership
+#'   probability), and \code{segment}.}
+#' \item{effects}{Segment-level effect summaries: posterior mean, sd, credible
+#'   interval bounds, and \code{p_gt0}, plus \code{n} (segment size) and
+#'   \code{n_group} (estimated weighted latent-group size).}
 #' \item{draws}{List of posterior draw matrices by segment.}
-#' \item{contrast}{If \code{contrast = TRUE}, posterior comparison of the highest- vs
-#'   lowest-effect segments, containing \code{$summary} and posterior draws in \code{$draws}.}
-#' \item{plot}{If \code{plot = TRUE}, a list of ggplot objects including \code{$effect}
-#'   (segment effects) and, when \code{contrast = TRUE}, \code{$diff} (difference distribution).}
+#' \item{contrast}{If \code{contrast = TRUE}
+#' , posterior comparison of the highest- vs
+#'   lowest-effect segments, containing \code{$summary} and
+#' posterior draws in \code{$draws}.}
+#' \item{plot}{If \code{plot = TRUE}
+#' , a list of ggplot objects including \code{$effect}
+#'   (segment effects) and, when \code{contrast = TRUE}
+#' , \code{$diff} (difference distribution).}
 #'
 #' @export
 
@@ -69,20 +90,26 @@ segment_heterogeneity <- function(
   plot = FALSE,
   contrast = FALSE
 ) {
-  if (!inherits(princebart, "princebart")) {
-    stop("princebart must be a fitted princebart object")
+  if (!inherits(princebart, "prince_bart")) {
+    stop("princebart must be a fitted prince_bart object")
   }
   if (is.null(princebart$probs) || length(dim(princebart$probs)) != 4) {
     stop("princebart$probs must be a 4D array")
   }
 
   if (is.null(data)) {
-    if (is.null(princebart$data$X)) {
-      stop("data must be provided when princebart$data$X is missing")
+    data <- get_fit_covariates(princebart, type = "raw")
+    if (is.null(data)) {
+      stop("segment_heterogeneity() requires princebart$data$X_raw; please refit with current prince_BART()")
     }
-    data <- princebart$data$X
   }
   data <- as.data.frame(data)
+
+  # Make names syntactic to safely evaluate model formulas with factor dummies.
+  orig_names <- names(data)
+  safe_names <- make.names(orig_names, unique = TRUE)
+  names(data) <- safe_names
+  name_map <- stats::setNames(safe_names, orig_names)
 
   n_units <- dim(princebart$probs)[4]
   if (nrow(data) != n_units) {
@@ -91,6 +118,12 @@ segment_heterogeneity <- function(
 
   if (is.null(vars)) {
     vars <- setdiff(names(data), c("cate", "w", "segment", "e"))
+  } else {
+    vars <- as.character(vars)
+    if (!all(vars %in% names(name_map))) {
+      stop("vars contains names not found in data")
+    }
+    vars <- unname(name_map[vars])
   }
   if (length(vars) == 0) {
     stop("vars must contain at least one covariate name")
@@ -101,20 +134,18 @@ segment_heterogeneity <- function(
 
   alpha <- (1 - ci_level) / 2
 
-  prob <- princebart$probs
-  p_n <- prob[, , "p_n", ]
-  p_a <- prob[, , "p_a", ]
-  p_c <- 1 - p_n - p_a
-  my1c <- prob[, , "m_y1c", ]
-  my0c <- prob[, , "m_y0c", ]
-  cate_draws <- my1c - my0c
+  seg_q <- extract_segment_quantities(princebart)
+  cate_draws <- seg_q$cate_draws
+  group_prob_draws <- seg_q$group_prob_draws
 
   data$cate <- apply(cate_draws, 3, mean, na.rm = TRUE)
-  data$w <- apply(p_c, 3, mean, na.rm = TRUE)
+  data$w <- apply(group_prob_draws, 3, mean, na.rm = TRUE)
 
   rpart_data <- data[, unique(c("cate", vars, "w")), drop = FALSE]
-  seg_formula <- paste("cate ~", paste(vars, collapse = " + ")) |>
-    stats::as.formula()
+  prep <- preprocess_segmentation_vars(rpart_data, vars)
+  rpart_data <- prep$data
+  ordered_meta <- prep$ordered_meta
+  seg_formula <- stats::reformulate(vars, response = "cate")
 
   tree <- rpart::rpart(
     seg_formula,
@@ -127,18 +158,20 @@ segment_heterogeneity <- function(
     tree <- prune_weighted_tree(rpart_data, tree, min_compliers_bucket)
   }
 
-  data$segment <- assign_segments(tree)
+  data$segment <- assign_segments(tree, rpart_data, ordered_meta)
 
   segment_draws <- function(include) {
     if (!any(include)) {
-      return(matrix(NA_real_, nrow = dim(prob)[1], ncol = dim(prob)[2]))
+      return(
+        matrix(NA_real_, nrow = dim(cate_draws)[1], ncol = dim(cate_draws)[2])
+      )
     }
     numer <- apply(
-      cate_draws[, , include, drop = FALSE] * p_c[, , include, drop = FALSE],
-      1:2,
-      sum
+      cate_draws[, , include, drop = FALSE] *
+        group_prob_draws[, , include, drop = FALSE]
+      , 1:2, sum
     )
-    denom <- apply(p_c[, , include, drop = FALSE], 1:2, sum)
+    denom <- apply(group_prob_draws[, , include, drop = FALSE], 1:2, sum)
     est <- numer / denom
     est[denom == 0] <- NA_real_
     est
@@ -173,7 +206,7 @@ segment_heterogeneity <- function(
       ci_upper = sumry$ci[2],
       p_gt0 = sumry$p_gt0,
       n = sum(include),
-      n_complier = sum(data$w[include]),
+      n_group = sum(data$w[include]),
       stringsAsFactors = FALSE
     )
     draws[[seg_name]] <<- est
@@ -189,29 +222,50 @@ segment_heterogeneity <- function(
 
   contrast_res <- NULL
   if (contrast) {
-    seg_means <- tapply(data$cate, data$segment, mean, na.rm = TRUE)
-    seg_min <- names(which.min(seg_means))
-    seg_max <- names(which.max(seg_means))
-    est_min <- segment_draws(data$segment == seg_min)
-    est_max <- segment_draws(data$segment == seg_max)
-    diff_draws <- as.vector(est_max - est_min)
-    diff_draws <- diff_draws[is.finite(diff_draws)]
-    if (length(diff_draws) == 0) {
-      diff_draws <- NA_real_
-    }
-    contrast_res <- list(
-      segment_low = seg_min,
-      segment_high = seg_max,
-      draws = diff_draws,
-      summary = data.frame(
-        mean = mean(diff_draws, na.rm = TRUE),
-        sd = stats::sd(diff_draws, na.rm = TRUE),
-        ci_lower = stats::quantile(diff_draws, alpha, na.rm = TRUE),
-        ci_upper = stats::quantile(diff_draws, 1 - alpha, na.rm = TRUE),
-        p_gt0 = mean(diff_draws > 0, na.rm = TRUE),
-        stringsAsFactors = FALSE
+    seg_levels <- levels(droplevels(data$segment))
+    if (length(seg_levels) < 2L) {
+      contrast_res <- list(
+        segment_low = NA_character_,
+        segment_high = NA_character_,
+        draws = numeric(0),
+        summary = data.frame(
+          mean = NA_real_,
+          sd = NA_real_,
+          ci_lower = NA_real_,
+          ci_upper = NA_real_,
+          p_gt0 = NA_real_,
+          stringsAsFactors = FALSE
+        )
       )
-    )
+    } else {
+      seg_means <- tapply(data$cate, data$segment, mean, na.rm = TRUE)
+      seg_min <- names(which.min(seg_means))
+      seg_max <- names(which.max(seg_means))
+      est_min <- segment_draws(data$segment == seg_min)
+      est_max <- segment_draws(data$segment == seg_max)
+      diff_draws <- as.vector(est_max - est_min)
+      diff_draws <- diff_draws[is.finite(diff_draws)]
+      if (length(diff_draws) == 0) {
+        diff_draws <- NA_real_
+      }
+      contrast_res <- list(
+        segment_low = seg_min,
+        segment_high = seg_max,
+        draws = diff_draws,
+        summary = data.frame(
+          mean = mean(diff_draws, na.rm = TRUE),
+          sd = stats::sd(diff_draws, na.rm = TRUE),
+          ci_lower = stats::quantile(
+            diff_draws, alpha, na.rm = TRUE, names = FALSE
+          )
+          , ci_upper = stats::quantile(
+            diff_draws, 1 - alpha, na.rm = TRUE, names = FALSE
+          )
+          , p_gt0 = mean(diff_draws > 0, na.rm = TRUE),
+          stringsAsFactors = FALSE
+        )
+      )
+    }
   }
   wrap_label <- function(x, width = 40) {
     vapply(
@@ -283,11 +337,15 @@ segment_heterogeneity <- function(
   out
 }
 
-assign_segments <- function(tree) {
+assign_segments <- function(tree, data = NULL, ordered_meta = list()) {
   party_tree <- partykit::as.party(tree)
   list_rules <- utils::getFromNamespace(".list.rules.party", "partykit")
   rules <- list_rules(party_tree)
   rules <- simplify_and_pretty_rules(rules)
+  if (!is.null(data)) {
+    rules <- prettify_binary_rules(rules, data, ordered_meta = ordered_meta)
+  }
+  rules[is.na(rules) | trimws(rules) == ""] <- "all units"
   nodes <- stats::predict(party_tree, type = "node")
   factor(nodes, labels = rules)
 }
@@ -318,6 +376,42 @@ weighted_segment_sizes <- function(data, tree) {
   tapply(data$w, seg, sum)
 }
 
+#' @keywords internal
+extract_segment_quantities <- function(princebart) {
+  if (inherits(princebart, "prince_bart_binary")) {
+    prob <- princebart$probs
+    p_n <- prob[, , "p_n", ]
+    p_a <- prob[, , "p_a", ]
+    group_prob_draws <- 1 - p_n - p_a
+    cate_draws <- prob[, , "m_y1c", ] - prob[, , "m_y0c", ]
+    group_label <- "complier"
+  } else if (inherits(princebart, "prince_bart_ordinal")) {
+    if (is.null(princebart$imp) || length(dim(princebart$imp)) != 4) {
+      stop("princebart$imp must be a 4D array for ordinal fits")
+    }
+    imp <- princebart$imp
+    probs <- princebart$probs
+    affected <- (imp[, , "w0", ] - imp[, , "w1", ]) == 1
+    cate_draws <- probs[, , "m_y1", ] - probs[, , "m_y0", ]
+    group_prob_draws <- affected * 1
+    group_label <- "affected"
+  } else {
+    stop(
+      "princebart must inherit from prince_bart_binary or prince_bart_ordinal"
+    )
+  }
+
+  if (!identical(dim(cate_draws), dim(group_prob_draws))) {
+    stop("cate_draws and group_prob_draws must have identical dimensions")
+  }
+
+  list(
+    cate_draws = cate_draws,
+    group_prob_draws = group_prob_draws,
+    group_label = group_label
+  )
+}
+
 simplify_and_pretty_rules <- function(rules, digits = 1) {
 
   pretty_num <- function(x) {
@@ -330,7 +424,11 @@ simplify_and_pretty_rules <- function(rules, digits = 1) {
     parts <- strsplit(rule, " & ", fixed = TRUE)[[1]]
 
     # Parse: var op value  (value numeric)
-    rx <- "^\\s*([A-Za-z.][A-Za-z0-9._]*)\\s*(<=|>=|<|>)\\s*([-+]?[0-9]*\\.?[0-9]+)\\s*$"
+    rx <- paste0(
+      "^\\s*([A-Za-z.][A-Za-z0-9._]*)",
+      "\\s*(<=|>=|<|>)",
+      "\\s*([-+]?[0-9]*\\.?[0-9]+)\\s*$"
+    )
     m <- regexec(rx, parts, perl = TRUE)
     g <- regmatches(parts, m)
 
@@ -366,4 +464,164 @@ simplify_and_pretty_rules <- function(rules, digits = 1) {
   }
 
   vapply(rules, simplify_one, character(1))
+}
+
+#' @keywords internal
+find_dummy_groups <- function(binary_vars, min_prefix = 2L) {
+  n <- length(binary_vars)
+  if (n < 2L) return(list())
+
+  lcp2 <- function(a, b) {
+    ca <- strsplit(a, "")[[1]]
+    cb <- strsplit(b, "")[[1]]
+    len <- min(length(ca), length(cb))
+    k <- 0L
+    while (k < len && ca[k + 1L] == cb[k + 1L]) k <- k + 1L
+    substr(a, 1L, k)
+  }
+
+  result <- list()
+  for (i in seq_len(n - 1L)) {
+    for (j in seq(i + 1L, n)) {
+      pref <- lcp2(binary_vars[i], binary_vars[j])
+      np   <- nchar(pref)
+      if (np >= min_prefix) {
+        vi <- binary_vars[i]
+        vj <- binary_vars[j]
+        if (nchar(vi) > np && is.null(result[[vi]])) {
+          result[[vi]] <- c(base = pref, level = substr(vi, np + 1L, nchar(vi)))
+        }
+        if (nchar(vj) > np && is.null(result[[vj]])) {
+          result[[vj]] <- c(base = pref, level = substr(vj, np + 1L, nchar(vj)))
+        }
+      }
+    }
+  }
+  result
+}
+
+#' @keywords internal
+prettify_binary_rules <- function(rules, data, ordered_meta = list()) {
+  ordered_vars <- names(ordered_meta)
+
+  # Identify binary (0/1) columns in the segmentation data.
+  is_bin <- vapply(names(data), function(nm) {
+    col <- data[[nm]]
+    v <- unique(suppressWarnings(as.numeric(col)))
+    v <- v[is.finite(v)]
+    length(v) <= 2L && all(v %in% c(0, 1))
+  }, logical(1))
+  binary_vars <- names(data)[is_bin]
+
+  # Detect factor dummy groups via longest common prefix.
+  dummy_map <- if (length(binary_vars) > 0L) find_dummy_groups(binary_vars) else list()
+
+  rx <- paste0(
+    "^\\s*([A-Za-z.][A-Za-z0-9._]*)",
+    "\\s*(<=|>=|<|>)",
+    "\\s*([-+]?[0-9]*\\.?[0-9]+)\\s*$"
+  )
+
+  parse_part <- function(p) {
+    m <- regmatches(p, regexec(rx, p, perl = TRUE))[[1]]
+    if (length(m) == 4L) {
+      list(var = m[2L], op = m[3L], val = as.numeric(m[4L]), raw = p)
+    } else {
+      NULL
+    }
+  }
+
+  ordered_expr_from_conds <- function(var, conds) {
+    lev <- ordered_meta[[var]]
+    if (is.null(lev)) return(NULL)
+    nlev <- length(lev)
+    if (nlev == 0L) return(NULL)
+
+    codes <- 0:(nlev - 1L)
+    ok <- vapply(codes, function(code) {
+      all(vapply(conds, function(cd) {
+        if (cd$op == "<") return(code < cd$val)
+        if (cd$op == "<=") return(code <= cd$val)
+        if (cd$op == ">") return(code > cd$val)
+        code >= cd$val
+      }, logical(1)))
+    }, logical(1))
+
+    allowed <- codes[ok]
+    if (length(allowed) == 0L) return(NULL)
+    lo <- min(allowed)
+    hi <- max(allowed)
+    if (lo == 0L && hi == (nlev - 1L)) return(NULL)
+    if (lo == 0L && hi == 0L && nlev >= 2L) {
+      return(sprintf('%s < %s', var, lev[2L]))
+    }
+    if (lo == 0L) return(sprintf('%s <= %s', var, lev[hi + 1L]))
+    if (hi == (nlev - 1L)) return(sprintf('%s > %s', var, lev[lo]))
+    if (lo == hi) return(sprintf('%s == %s', var, lev[lo + 1L]))
+    paste0(
+      sprintf('%s > %s', var, lev[lo]),
+      " & ",
+      sprintf('%s <= %s', var, lev[hi + 1L])
+    )
+  }
+
+  rewrite_part <- function(var, op, val_chr) {
+    if (!(var %in% binary_vars)) return(paste(var, op, val_chr))
+    if (abs(as.numeric(val_chr) - 0.5) > 1e-6) return(paste(var, op, val_chr))
+    is_pos <- op %in% c(">=", ">")
+    grp <- dummy_map[[var]]
+    if (!is.null(grp)) {
+      base  <- grp[["base"]]
+      level <- grp[["level"]]
+      if (is_pos) sprintf('%s == %s', base, level)
+      else        sprintf('%s != %s', base, level)
+    } else {
+      if (is_pos) var
+      else        paste("not", var)
+    }
+  }
+
+  rewrite_rule <- function(rule) {
+    parts <- strsplit(rule, " & ", fixed = TRUE)[[1]]
+    parsed <- lapply(parts, parse_part)
+
+    ordered_rewrites <- character(0)
+    consumed_idx <- rep(FALSE, length(parts))
+    if (length(ordered_vars) > 0L) {
+      for (v in ordered_vars) {
+        idx <- which(vapply(parsed, function(x) !is.null(x) && identical(x$var, v), logical(1)))
+        if (length(idx) > 0L) {
+          expr <- ordered_expr_from_conds(v, parsed[idx])
+          if (!is.null(expr)) {
+            ordered_rewrites <- c(ordered_rewrites, expr)
+            consumed_idx[idx] <- TRUE
+          }
+        }
+      }
+    }
+
+    remaining <- vapply(seq_along(parts), function(i) {
+      if (consumed_idx[i]) return(NA_character_)
+      p <- parsed[[i]]
+      if (is.null(p)) return(parts[i])
+      rewrite_part(p$var, p$op, as.character(p$val))
+    }, character(1L))
+    remaining <- remaining[!is.na(remaining)]
+    paste(c(ordered_rewrites, remaining), collapse = " & ")
+  }
+
+  vapply(rules, rewrite_rule, character(1L))
+}
+
+#' @keywords internal
+preprocess_segmentation_vars <- function(data, vars) {
+  out <- data
+  ordered_meta <- list()
+  for (v in vars) {
+    if (is.ordered(out[[v]])) {
+      ordered_meta[[v]] <- levels(out[[v]])
+      out[[v]] <- as.integer(out[[v]]) - 1L
+    }
+  }
+  list(data = out, ordered_meta = ordered_meta)
 }

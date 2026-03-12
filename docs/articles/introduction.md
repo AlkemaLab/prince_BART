@@ -19,10 +19,10 @@ experiments, the framework applies broadly to any setting with:
 
 We observe:
 
-- **Z**: Instrument (e.g., randomized assignment, geographic variation,
-  policy change)
-- **W**: Endogenous treatment/exposure of interest
-- **Y**: Outcome
+- **Z**: Binary instrument (e.g., randomized assignment, geographic
+  variation, policy change)
+- **W**: Binary endogenous treatment/exposure of interest
+- **Y**: Binary outcome
 - **X**: Covariates
 
 ### Key Assumptions
@@ -68,7 +68,9 @@ X <- data.frame(
 
 # Principal strata (latent)
 # Probability of being a complier depends on covariates
-p_complier <- plogis(-1.2 + 0.03 * X$age + 0.12 * X$education - 0.00001 * X$income)
+p_complier <- plogis(
+  -1.2 + 0.03 * X$age + 0.12 * X$education - 0.00001 * X$income
+)
 p_always   <- plogis(-2 + 0.01 * X$age)
 p_never    <- pmax(1 - p_complier - p_always, 0)
 denom <- p_complier + p_never + p_always
@@ -133,6 +135,7 @@ fit <- prince_BART(
   instrument_overlap = c(0.1, 0.9),
   keep_trees = TRUE  # Save trees for generalization
 )
+# saveRDS(fit, file = "inst/extdata/fit_intro.rds")
 ```
 
 ## Extracting Treatment Effects
@@ -144,7 +147,7 @@ and can optionally be restricted to treated compliers (treated_only =
 TRUE).
 
 ``` r
-fit <- readRDS(system.file("extdata", "fit_intro.rds", package = "princeBART"))
+fit <- readRDS(.extdata("fit_intro.rds"))
 
 # Print summary
 print(fit)
@@ -154,42 +157,45 @@ print(fit)
 #> Iterations:   200 
 #> Units:        800 
 #> Trees:        saved
+#> Uptake model:  Binary uptake (3 principal strata: complier, never-taker, always-taker) 
 #> 
-#> Use summary() or coef() to extract treatment effects.
+#> Use summary() or coef() to extract contrasts and treatment effects.
 
 # Summary shows strata distribution and treatment effect
 summary(fit)
-#> Principal Stratification BART Summary
-#> =====================================
+#> Principal Stratification BART Summary (Binary Uptake)
+#> =====================================================
 #> 
 #> Principal Strata Distribution:
-#> # A tibble: 3 × 10
-#>   variable       mean median     sd    mad    q5   q95  rhat ess_bulk ess_tail
-#>   <chr>         <dbl>  <dbl>  <dbl>  <dbl> <dbl> <dbl> <dbl>    <dbl>    <dbl>
-#> 1 compliers     0.690  0.690 0.0233 0.0243 0.651 0.727  1.03     84.3     216.
-#> 2 never-takers  0.153  0.152 0.0162 0.0157 0.126 0.178  1.00    125.      215.
-#> 3 always-takers 0.158  0.158 0.0168 0.0175 0.131 0.185  1.04    112.      194.
+#>        variable      mean    median         sd        mad        q5       q95
+#> 1     compliers 0.1580609 0.1572488 0.01714859 0.01633383 0.1312092 0.1878328
+#> 2  never-takers 0.1528376 0.1539161 0.01767777 0.01817189 0.1239488 0.1809148
+#> 3 always-takers 0.6891015 0.6903201 0.02381659 0.02292560 0.6455071 0.7293826
+#>        rhat ess_bulk ess_tail
+#> 1 0.9984064 157.8097 210.9703
+#> 2 1.0179362 114.5603 222.4572
+#> 3 1.0105493 114.0515 162.7616
 #> 
 #> Mixed ATE for Compliers:
-#> # A tibble: 5 × 10
-#>   variable       mean median     sd    mad      q5   q95  rhat ess_bulk ess_tail
-#>   <chr>         <dbl>  <dbl>  <dbl>  <dbl>   <dbl> <dbl> <dbl>    <dbl>    <dbl>
-#> 1 Y(0) | comp… 0.727  0.728  0.0317 0.0313  0.674  0.777 1.00      130.     188.
-#> 2 Y(1) | comp… 0.759  0.761  0.0330 0.0308  0.702  0.809 1.03      111.     215.
-#> 3 Y(0) | neve… 0.549  0.553  0.0622 0.0584  0.449  0.649 1.04      101.     188.
-#> 4 Y(1) | alwa… 0.662  0.659  0.0570 0.0577  0.570  0.761 0.999     111.     205.
-#> 5 MATE | comp… 0.0326 0.0306 0.0451 0.0417 -0.0426 0.108 1.01      128.     215.
+#>                  variable       mean     median         sd        mad
+#> 1        Y(0) | compliers 0.73322582 0.73407324 0.03856802 0.03797022
+#> 2        Y(1) | compliers 0.77956670 0.78263515 0.03676101 0.03697398
+#> 3     Y(0) | never-takers 0.55011160 0.55112361 0.06096632 0.06687562
+#> 4    Y(1) | always-takers 0.64670444 0.64782591 0.05942009 0.06000187
+#> 5 Mixed ATE for compliers 0.04634088 0.04738813 0.05437129 0.05480359
+#>            q5       q95     rhat ess_bulk ess_tail
+#> 1  0.66657103 0.7963835 1.012367 116.7625 173.3331
+#> 2  0.71348203 0.8353146 1.009086 129.2766 241.4299
+#> 3  0.45027727 0.6473191 1.000831 117.7128 197.4064
+#> 4  0.54197792 0.7376099 1.005648 128.5477 250.6533
+#> 5 -0.04475292 0.1349096 1.004749 131.1382 182.5737
 
 # Mixed ATE for Compliers (default)
 coef(fit)
-#> # A tibble: 5 × 10
-#>   variable       mean median     sd    mad      q5   q95  rhat ess_bulk ess_tail
-#>   <chr>         <dbl>  <dbl>  <dbl>  <dbl>   <dbl> <dbl> <dbl>    <dbl>    <dbl>
-#> 1 Y(0) | comp… 0.727  0.728  0.0317 0.0313  0.674  0.777 1.00      130.     188.
-#> 2 Y(1) | comp… 0.759  0.761  0.0330 0.0308  0.702  0.809 1.03      111.     215.
-#> 3 Y(0) | neve… 0.549  0.553  0.0622 0.0584  0.449  0.649 1.04      101.     188.
-#> 4 Y(1) | alwa… 0.662  0.659  0.0570 0.0577  0.570  0.761 0.999     111.     205.
-#> 5 MATE | comp… 0.0326 0.0306 0.0451 0.0417 -0.0426 0.108 1.01      128.     215.
+#>        Y(0) | compliers        Y(1) | compliers     Y(0) | never-takers 
+#>              0.73322582              0.77956670              0.55011160 
+#>    Y(1) | always-takers Mixed ATE for compliers 
+#>              0.64670444              0.04634088
 ```
 
 ## Effect Heterogeneity by Segments
@@ -212,12 +218,14 @@ res <- segment_heterogeneity(
 )
 
 res$contrast$summary
-#>        mean        sd    ci_lower  ci_upper p_gt0
-#> 5% 0.175453 0.1216093 -0.03224862 0.3835347  0.92
+#>        mean        sd    ci_lower ci_upper p_gt0
+#> 1 0.1830328 0.1233037 -0.03709192 0.379174  0.93
 res$plot$diff
 ```
 
-![](introduction_files/figure-html/heterogeneity-1.png)
+![Difference in estimated complier effects across covariate-defined
+segments from a shallow tree
+summary.](introduction_files/figure-html/heterogeneity-1.png)
 
 The segment-level summaries in res\$effects correspond to
 subgroup-specific average effects among compliers, obtained by averaging
@@ -229,19 +237,23 @@ distribution of CATE_C(x).
 
 ``` r
 res$effects
-#>                       segment    mean     sd ci_lower ci_upper p_gt0   n
-#>                       overall  0.0326 0.0451  -0.0426    0.108 0.790 800
-#>                   age >= 51.2 -0.0461 0.0876  -0.1868    0.106 0.290  97
-#>      age >= 39.1 & age < 51.2  0.0127 0.0619  -0.0993    0.107 0.590 322
-#>   age < 39.1 & income < 51.1K  0.0245 0.0767  -0.0940    0.154 0.637 199
-#>  age < 39.1 & income >= 51.1K  0.1294 0.0808   0.0108    0.277 0.965 182
-#>  n_complier
-#>       551.6
-#>        74.7
-#>       222.3
-#>       137.4
-#>       117.2
+#>                                    segment     mean     sd ci_lower ci_upper
+#>                                    overall  0.04523 0.0457 -0.02925    0.120
+#>               income < 51.1K & age >= 48.8 -0.07388 0.0956 -0.21647    0.104
+#>  income < 51.1K & age >= 32.1 & age < 48.8  0.00568 0.0633 -0.09944    0.116
+#>                income < 51.1K & age < 32.1  0.09191 0.1041 -0.07409    0.257
+#>              income >= 51.1K & age >= 47.2  0.03339 0.0753 -0.09374    0.151
+#>               income >= 51.1K & age < 47.2  0.10916 0.0709 -0.00932    0.231
+#>  p_gt0   n n_group
+#>  0.833 800   551.3
+#>  0.215  68    53.5
+#>  0.520 266   191.3
+#>  0.815  88    61.3
+#>  0.667  83    60.6
+#>  0.920 295   184.5
 res$plot$effect
 ```
 
-![](introduction_files/figure-html/heterogeneity_effects-1.png)
+![Estimated subgroup-specific average complier effects for each
+identified
+segment.](introduction_files/figure-html/heterogeneity_effects-1.png)

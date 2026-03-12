@@ -12,9 +12,16 @@ effects** to an external population using
 - The target population may be missing some covariates collected in the
   source
 
-The key identifying assumption is that **X captures all effect
-heterogeneity**, meaning the conditional treatment effect given X is the
-same for compliers in the source study as in the general population.
+The key identifying assumptions are:
+
+1.  **Conditional transportability**: The conditional treatment effect
+    given X is the same in the source study and target population. That
+    is, once we condition on observed covariates X, there are no
+    remaining unmeasured effect modifiers that differ between the two in
+    a way that changes the effect.
+
+2.  **Included support**: Covariate profiles observed in the target
+    population must be adequately represented in the source data.
 
 ### Simulating an External Population
 
@@ -67,6 +74,8 @@ pate_result <- general_BART(
 
 # View results
 print(pate_result)
+
+# saveRDS(pate_result, file = "inst/extdata/pate_result.rds")
 ```
 
 The output shows: - **PATE**: The population average treatment effect
@@ -81,8 +90,7 @@ analyses.
 ### Understanding the Output
 
 ``` r
-pate_result <- readRDS(system.file("extdata", "pate_result.rds", package = "princeBART"))
-
+pate_result <- readRDS(.extdata("pate_result.rds"))
 
 # Detailed summary
 summary(pate_result)
@@ -90,9 +98,9 @@ summary(pate_result)
 #> =========================
 #> 
 #> Treatment Effect Estimate:
-#>   PATE:           0.097 
-#>   Posterior SD:   0.2115 
-#>   95% CI:        [-0.3139, 0.5053]
+#>   PATE:           0.0641 
+#>   Posterior SD:   0.2135 
+#>   95% CI:        [-0.3611, 0.5066]
 #>   N (subpop):     465 
 #> 
 #> For sensitivity analyses, use:
@@ -109,10 +117,12 @@ abline(v = pate_result$ci, col = "red", lty = 2)
 
 ![](generalizing_files/figure-html/pate-summary-1.png)
 
-### Assessing Generalizability Overlap
+### Assessing the Support Assumption: Overlap Diagnostics
 
-A natural concern is whether the source study population is
-representative of the target. Use
+One key threat to valid generalization is **lack of included
+support**—if target covariate profiles are poorly represented in the
+source data, results may depend on extrapolation into under-represented
+regions of covariate space. To assess this, use
 [`general_BART_overlap()`](../reference/general_BART_overlap.md) to
 compute the **generalizability overlap score**:
 
@@ -121,7 +131,13 @@ s = P(\text{complier}|X, \text{in source}) \times P(\text{in source}|X)
 ```
 
 This measures how similar external units are to compliers in the source
-study.
+study and whether their covariate profiles are well-represented in the
+source.
+
+For binary uptake fits, this is exactly the complier-based overlap
+diagnostic. For ordinal uptake fits, princeBART uses an affected-unit
+analogue $`W(0)-W(1)=1`$; this ordinal overlap diagnostic is currently
+experimental.
 
 ``` r
 # Compute overlap scores from the fitted general_pate object
@@ -132,17 +148,17 @@ overlap <- general_BART_overlap(
 ```
 
 ``` r
-overlap <- readRDS(system.file("extdata", "overlap_result.rds", package = "princeBART"))
+overlap <- readRDS(.extdata("overlap_result.rds"))
 
 # View overlap metrics
 head(overlap$overlap)
 #>        pi_c      pi_t       pi_s e_s_tilde
-#> 1 0.6119347 0.3007396 0.18403300 -1.944747
-#> 2 0.5771504 0.2446589 0.14120496 -2.265568
-#> 3 0.8282606 0.1836160 0.15208186 -2.177305
-#> 4 0.7009525 0.2792159 0.19571708 -1.867624
-#> 5 0.4785063 0.2015183 0.09642777 -2.704325
-#> 6 0.7498047 0.1568963 0.11764157 -2.478365
+#> 1 0.5033078 0.3320551 0.16712592 -2.017992
+#> 2 0.4488438 0.2074929 0.09313190 -2.693049
+#> 3 0.7593993 0.3066742 0.23288821 -1.600709
+#> 4 0.6001259 0.2628247 0.15772787 -2.087626
+#> 5 0.3569716 0.1845658 0.06588474 -3.071685
+#> 6 0.6501027 0.1296895 0.08431150 -2.803076
 
 # Plot overlap diagnostics
 plot_overlap(overlap)
@@ -155,73 +171,55 @@ Source study compliers (blue) - Target population units (red)
 
 Good overlap means the distributions substantially overlap.
 
-#### Trimming for Overlap
+For ordinal uptake fits, this diagnostic uses an affected-unit analogue
+$`W(0)-W(1)=1`$ in place of binary compliers and should be treated as
+experimental.
 
-If some external units have poor overlap with source compliers, you can
-trim them from the PATE estimate using a threshold on the standardized
-selection score:
+#### Conservative Support Sensitivity Check
+
+If some target-population units have covariate profiles poorly
+represented in the source, you can assess sensitivity by recomputing the
+PATE under a conservative assumption for those units. This tests whether
+conclusions depend heavily on extrapolation:
 
 ``` r
-# Trim observations with |e_s_tilde| > 2 (i.e., outliers)
+# Identify and conservatively adjust for poorly supported target units
+# Set treatment effect to zero for units with |e_s_tilde| > 2 (standardized score)
 overlap_trimmed <- general_BART_overlap(
   object = pate_result,
   threshold = 2,           # Standardized score threshold
-  overlap_value = "zero",  # Set tau = 0 for trimmed units
+  overlap_value = "zero",  # Conservative: assume tau = 0 for poorly supported units
   verbose = TRUE
 )
 ```
 
 ``` r
-overlap_trimmed <- readRDS(system.file("extdata", "overlap_trimmed_result.rds", package = "princeBART"))
-# Compare trimmed vs original PATE
-cat("Original PATE:", round(pate_result$pate, 4), "\n")
-#> Original PATE: 0.097
-cat("Trimmed PATE: ", round(overlap_trimmed$pate_trimmed, 4), "\n")
-#> Trimmed PATE:  0.0354
-cat("Units trimmed:", overlap_trimmed$n_trimmed, "\n")
-#> Units trimmed: 333
+overlap_trimmed <- readRDS(.extdata("overlap_trimmed_result.rds"))
+
+# Compare conservative PATE vs original
+cat("Original PATE (all units):", round(pate_result$pate, 4), "\n")
+#> Original PATE (all units): 0.0641
+cat("Conservative PATE (unsupported → 0):", round(overlap_trimmed$pate_trimmed, 4), "\n")
+#> Conservative PATE (unsupported → 0): 0.0333
+cat("Units with weak support:", overlap_trimmed$n_trimmed, "\n")
+#> Units with weak support: 382
 ```
 
-### Sensitivity Analysis for Confounding
+### Sensitivity Analysis for Transportability
 
-If you’re concerned about unmeasured confounding, use
+Even with good overlap/support, the source and target populations may
+differ in **unmeasured effect modifiers**—covariates not captured in X.
+To assess sensitivity to this violation of conditional transportability,
+use
 [`general_BART_transportability()`](../reference/general_BART_transportability.md)
-for weight-shift sensitivity analysis:
+for a bounded weight-shift sensitivity analysis. This computes bounds on
+the PATE under the assumption that an unobserved effect modifier differs
+between populations by a specified amount.
 
-``` r
-# Sensitivity analysis with gamma = 2
-# This computes bounds on PATE under worst-case weight perturbations
-sens <- general_BART_transportability(
-  object = pate_result,
-  gamma = 2,        # Allow weights to vary by factor of 2
-  n_sample = 100,   # Number of posterior draws to use
-  verbose = TRUE
-)
-```
-
-``` r
-sens <- readRDS(system.file("extdata", "sensitivity_result.rds", package = "princeBART"))
-# View sensitivity bounds
-cat("Gamma =", sens$gamma, "\n")
-#> Gamma = 2
-cat("Lower bound:", round(sens$lower$estimate, 4), 
-    "[", round(sens$lower$ci[1], 4), ",", round(sens$lower$ci[2], 4), "]\n")
-#> Lower bound: 0.046 [ -0.5496 , 0.5199 ]
-cat("Upper bound:", round(sens$upper$estimate, 4),
-    "[", round(sens$upper$ci[1], 4), ",", round(sens$upper$ci[2], 4), "]\n")
-#> Upper bound: 0.2859 [ -0.2878 , 0.7789 ]
-```
-
-The sensitivity analysis shows bounds on the PATE under worst-case
-weight perturbations. The `gamma` parameter controls the maximum ratio
-by which observation weights can be shifted—larger values allow for more
-severe confounding. If the bounds exclude zero, the effect is robust to
-confounding of that magnitude.
-
-#### Multiple Sensitivity Parameters
-
-You can run sensitivity analysis for multiple gamma values to create a
-sensitivity curve:
+Run the sensitivity analysis across a range of gamma values to produce a
+sensitivity curve. This shows how robust the PATE is to unmeasured
+effect modification across source-target differences of varying
+severity:
 
 ``` r
 # Sensitivity curve for multiple gamma values
@@ -232,21 +230,49 @@ sens_results <- lapply(gammas, function(g) {
 ```
 
 ``` r
-sens_results <- readRDS(system.file("extdata", "sensitivity_curve_results.rds", package = "princeBART"))
+sens_results <- readRDS(.extdata("sensitivity_curve_results.rds"))
+
 gammas <- c(1.1, 1.25, 1.5, 2, 3)
 # Extract bounds
 lower_bounds <- sapply(sens_results, function(x) x$lower$estimate)
 upper_bounds <- sapply(sens_results, function(x) x$upper$estimate)
 
 # Plot sensitivity curve
-plot(gammas, upper_bounds, type = "l", col = "red", 
+plot(gammas, upper_bounds, type = "l", col = "red", lwd = 2,
      ylim = range(c(lower_bounds, upper_bounds)),
-     xlab = "Gamma", ylab = "PATE Bounds", main = "Sensitivity Analysis")
-lines(gammas, lower_bounds, col = "blue")
-abline(h = 0, lty = 2)
-abline(h = pate_result$pate, lty = 3)
-legend("topright", c("Upper", "Lower", "Null", "Point est."), 
-       col = c("red", "blue", "black", "black"), lty = c(1, 1, 2, 3))
+     xlab = "Gamma (max weight ratio)", ylab = "PATE Bounds", 
+     main = "Sensitivity to Unmeasured Effect Modifiers")
+lines(gammas, lower_bounds, col = "blue", lwd = 2)
+abline(h = 0, lty = 2, col = "gray")
+abline(h = pate_result$pate, lty = 3, col = "dark gray", lwd = 1.5)
+legend("topright", c("Upper bound", "Lower bound", "Null effect", "Point estimate"), 
+       col = c("red", "blue", "gray", "dark gray"), lty = c(1, 1, 2, 3), lwd = c(2, 2, 1, 1.5))
 ```
 
 ![](generalizing_files/figure-html/sensitivity-curve-results-1.png)
+
+### Summary: Two Robustness Checks for Generalization
+
+The vignette has illustrated two distinct robustness checks that address
+the two key identifying assumptions:
+
+**Support Sensitivity Check** (via overlap diagnostics and conservative
+adjustment) - **Assumption tested**: Included support - **Question**:
+Are we extrapolating into covariate regions poorly represented in the
+source? - **Evidence**: Threshold selected based on standardized
+selection score; PATE recomputed assuming zero effect for poorly
+supported target units - **Interpretation**: Large drop in PATE suggests
+strong dependence on extrapolation; modest drop suggests robustness to
+extrapolation risk
+
+**Transportability Sensitivity Check** (via weight-shift bounds) -
+**Assumption tested**: Conditional transportability - **Question**: How
+large would source-target differences in unmeasured effect modifiers
+need to be to materially change the PATE? - **Evidence**: Sensitivity
+curve showing PATE bounds across increasing values of gamma (maximum
+weight ratio) - **Interpretation**: If bounds remain tight across large
+gamma values and/or exclude zero, results are robust to unmeasured
+effect modification; if bounds widen dramatically or cross zero at small
+gamma, findings are fragile
+
+Both checks are valuable for a complete assessment of generalizability.

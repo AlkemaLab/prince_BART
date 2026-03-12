@@ -1,6 +1,6 @@
 Package: princeBART
 Title: Principal Stratification with Bayesian Additive Regression Trees
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     person(
       given  = "Lucas",
@@ -27,6 +27,7 @@ Imports:
     dbarts,
     posterior,
     abind,
+    data.table,
     future,
     future.apply,
     Formula,
@@ -34,6 +35,8 @@ Imports:
     parallel,
     partykit,
     rpart,
+    truncnorm,
+    VGAM,
     CVXR
 Suggests:
     testthat (>= 3.0.0),

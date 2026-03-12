@@ -19,7 +19,7 @@ containing imputed potential outcomes:
 }
 \description{
 Imputes potential outcomes Y(0) and Y(1) for compliers based on
-posterior samples from a fitted princebart model. Used internally
+posterior samples from a fitted prince_bart model. Used internally
 by sample-based estimand functions.
 }
 \keyword{internal}

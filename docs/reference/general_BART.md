@@ -1,9 +1,9 @@
 # Generalize Treatment Effects to External Populations (Transportability)
 
 Estimates Population Average Treatment Effects (PATE) in an external
-population using a fitted `princebart` model and external data, possibly
-from complex sample surveys. Assumes that covariates X capture all
-sources of effect heterogeneity, allowing the conditional complier
+population using a fitted `prince_bart` model and external data,
+possibly from complex sample surveys. Assumes that covariates X capture
+all sources of effect heterogeneity, allowing the conditional complier
 effect CATE_C(x) to generalize to the target population.
 
 ## Usage
@@ -26,7 +26,7 @@ general_BART(
 
 - princebart_fit:
 
-  A fitted `princebart` object with `keep_trees = TRUE`.
+  A fitted `prince_bart` object with `keep_trees = TRUE`.
 
 - newdata:
 

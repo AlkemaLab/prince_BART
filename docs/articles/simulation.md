@@ -72,10 +72,11 @@ library(matrixStats)
 library(abind)
 library(ggplot2)
 library(tidyverse)
+#> Warning: package 'tibble' was built under R version 4.4.3
 #> ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
 #> ✔ dplyr     1.1.4     ✔ readr     2.1.5
 #> ✔ forcats   1.0.0     ✔ stringr   1.5.2
-#> ✔ lubridate 1.9.4     ✔ tibble    3.3.0
+#> ✔ lubridate 1.9.4     ✔ tibble    3.3.1
 #> ✔ purrr     1.1.0     ✔ tidyr     1.3.1
 #> ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
 #> ✖ dplyr::count()   masks matrixStats::count()
@@ -228,7 +229,9 @@ mixed_complier_effect <- function(fitval) {
 # PStrata fitter (uses pre-compiled model)
 pstrata_fitter <- function(data, mcmc_iters = 200, pre_fit = NULL) {
   psobj <- ps_obj(data)
-  ps_fit <- PStrata(psobj, cores = 1, chains = 1, iter = mcmc_iters, fit = pre_fit)
+  ps_fit <- PStrata(
+    psobj, cores = 1, chains = 1, iter = mcmc_iters, fit = pre_fit
+  )
   mixed_complier_effect(fitted_pstrata(ps_fit))
 }
 ```
@@ -291,7 +294,7 @@ cvg <- function(res) {
 
 ``` r
 # Simulation parameters (reduced for vignette)
-m <- 20          # iterations (paper uses 400)
+m <- 2          # iterations (paper uses 400)
 designs <- c("A", "C")
 deltas <- c(0.02, 0.05)
 ns <- 400
@@ -300,10 +303,14 @@ ns <- 400
 ``` r
 set.seed(0203)
 
-# Using too many multisession workers can overwhelm laptops and increases the
-# chance of interruptions/timeouts. Keep this modest by default.
-workers <- min(10L, future::availableCores())
-plan(multisession, workers = workers)
+# Save and restore plan so worker teardown happens before knitr exits.
+old_plan <- future::plan()
+on.exit(future::plan(old_plan), add = TRUE)
+
+# Heavy Stan/BART calls inside each worker can exhaust memory if worker count
+# is too high. Keep this conservative for stable vignette rendering.
+workers <- min(2L, future::availableCores())
+future::plan(future::multisession, workers = workers)
 
 # Compile PStrata Stan model once
 cat("Compiling PStrata model...\n")
@@ -340,8 +347,7 @@ for (design in designs) {
     )
   }
 }
-# Save for latter use
-saveRDS(sim_results, file = "vignettes/sim_results.rds")
+# To regenerate: saveRDS(sim_results, file = "inst/extdata/sim_results.rds")
 ```
 
 ## Results
@@ -349,11 +355,8 @@ saveRDS(sim_results, file = "vignettes/sim_results.rds")
 ### Compile Metrics
 
 ``` r
-# Load precomputed results if available
-
-if (file.exists(system.file("extdata", "sim_results.rds", package = "princeBART"))) {
-  sim_results <- readRDS(system.file("extdata", "sim_results.rds", package = "princeBART"))
-}
+# Load precomputed results
+sim_results <- readRDS(.extdata("sim_results.rds"))
 
 results_df <- expand.grid(design = designs, delta = deltas) |>
   rowwise() |>

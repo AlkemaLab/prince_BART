@@ -86,11 +86,11 @@ coef(fit)
   Comparison of princeBART with standard estimators such as two-stage
   least squares (2SLS) in simulated settings.
 
-After installation, vignettes can also be accessed in R via:
-
-``` r
-browseVignettes("princeBART")
-```
+- **[Prince BART with Ordinal
+  Uptake](https://alkemalab.github.io/prince_BART/articles/ordinal.html)**  
+  Extension to treatments with multiple ordered levels, illustrated with
+  a fertility application estimating effects of number of children on
+  employment.
 
 ------------------------------------------------------------------------
 

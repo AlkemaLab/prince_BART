@@ -14,6 +14,8 @@ navbar:
           href: articles/generalizing.html
         - text: Simulation
           href: articles/simulation.html
+        - text: Ordinal Uptake
+          href: articles/ordinal.html
 
 articles:
   - title: Vignettes
@@ -21,3 +23,4 @@ articles:
       - introduction
       - generalizing
       - simulation
+      - ordinal

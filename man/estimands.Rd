@@ -28,7 +28,7 @@ standard deviation, and quantiles.
 }
 \description{
 Internal functions to compute various treatment effect estimands for the complier
-stratum from a fitted princebart model.
+stratum from a fitted prince_bart model.
 }
 \section{Functions}{
 \itemize{

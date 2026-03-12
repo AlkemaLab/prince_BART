@@ -18,6 +18,17 @@ knitr::opts_chunk$set(
   fig.height = 5,
   out.width = "100%"
 )
+.extdata <- function(fname) {
+  f <- system.file("extdata", fname, package = "princeBART")
+  if (nzchar(f) && file.exists(f)) return(f)
+  vdir <- tryCatch(
+    dirname(normalizePath(knitr::current_input())),
+    error = function(e) getwd()
+  )
+  f <- normalizePath(file.path(vdir, "..", "inst", "extdata", fname), mustWork = FALSE)
+  if (file.exists(f)) return(f)
+  stop("Cannot find extdata/", fname)
+}
 ```
 
 ## Overview
@@ -36,9 +47,9 @@ While the canonical application is noncompliance in randomized experiments, the 
 
 We observe:
 
-- **Z**: Instrument (e.g., randomized assignment, geographic variation, policy change)
-- **W**: Endogenous treatment/exposure of interest
-- **Y**: Outcome
+- **Z**: Binary instrument (e.g., randomized assignment, geographic variation, policy change)
+- **W**: Binary endogenous treatment/exposure of interest
+- **Y**: Binary outcome
 - **X**: Covariates
 
 ### Key Assumptions
@@ -78,7 +89,9 @@ X <- data.frame(
 
 # Principal strata (latent)
 # Probability of being a complier depends on covariates
-p_complier <- plogis(-1.2 + 0.03 * X$age + 0.12 * X$education - 0.00001 * X$income)
+p_complier <- plogis(
+  -1.2 + 0.03 * X$age + 0.12 * X$education - 0.00001 * X$income
+)
 p_always   <- plogis(-2 + 0.01 * X$age)
 p_never    <- pmax(1 - p_complier - p_always, 0)
 denom <- p_complier + p_never + p_always
@@ -143,7 +156,7 @@ fit <- prince_BART(
   instrument_overlap = c(0.1, 0.9),
   keep_trees = TRUE  # Save trees for generalization
 )
-
+# saveRDS(fit, file = "inst/extdata/fit_intro.rds")
 ```
 
 
@@ -155,7 +168,7 @@ These are mixed estimands—averages of conditional complier effects over the em
 and can optionally be restricted to treated compliers (treated_only = TRUE).
 
 ```{r estimands}
-fit <- readRDS(system.file("extdata", "fit_intro.rds", package = "princeBART"))
+fit <- readRDS(.extdata("fit_intro.rds"))
 
 # Print summary
 print(fit)
@@ -176,7 +189,7 @@ average effects among compliers, obtained by averaging conditional effects
 within each covariate-defined segment. Differences across segments highlight
 departures from effect homogeneity and provide an interpretable summary of
 treatment effect heterogeneity.
-```{r heterogeneity, fig.width=8, fig.height=5, out.width="100%"}
+```{r heterogeneity, fig.width=8, fig.height=5, out.width="100%", fig.alt="Difference in estimated complier effects across covariate-defined segments from a shallow tree summary."}
 res <- segment_heterogeneity(
   fit,
   min_compliers_bucket = 50,
@@ -195,7 +208,7 @@ within each covariate-defined segment. Differences across segments highlight
 departures from effect homogeneity and provide an interpretable summary of
 treatment effect heterogeneity. Segments are constructed post hoc to summarize 
 heterogeneity in the posterior distribution of CATE_C(x).
-```{r heterogeneity_effects, fig.width=8, fig.height=5, out.width="100%"}
+```{r heterogeneity_effects, fig.width=8, fig.height=5, out.width="100%", fig.alt="Estimated subgroup-specific average complier effects for each identified segment."}
 res$effects
 res$plot$effect
 ```

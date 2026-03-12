@@ -17,7 +17,7 @@ general_BART(
 )
 }
 \arguments{
-\item{princebart_fit}{A fitted \code{princebart} object with \code{keep_trees = TRUE}.}
+\item{princebart_fit}{A fitted \code{prince_bart} object with \code{keep_trees = TRUE}.}
 
 \item{newdata}{A data.frame containing the external population (e.g., survey data).
 Covariates present in the source data but missing from \code{newdata} will be
@@ -59,7 +59,8 @@ An object of class \code{general_pate} containing:
 }
 \description{
 Estimates Population Average Treatment Effects (PATE) in an external
-population using a fitted \code{princebart} model and external data, possibly from complex sample surveys.
+population using a fitted \code{prince_bart} model and external data
+, possibly from complex sample surveys.
 Assumes that covariates X capture all sources of effect heterogeneity,
 allowing the conditional complier effect CATE_C(x) to generalize to the
 target population.

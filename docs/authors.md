@@ -8,11 +8,11 @@
 ## Citation
 
 Godoy Garraza L (2026). *princeBART: Principal Stratification with
-Bayesian Additive Regression Trees*. R package version 0.1.0.
+Bayesian Additive Regression Trees*. R package version 0.2.0.
 
     @Manual{,
       title = {princeBART: Principal Stratification with Bayesian Additive Regression Trees},
       author = {Lucas {Godoy Garraza}},
       year = {2026},
-      note = {R package version 0.1.0},
+      note = {R package version 0.2.0},
     }

@@ -44,4 +44,8 @@
 #' @importFrom future plan multisession
 #' @importFrom Formula Formula
 #' @importFrom utils getFromNamespace
+#' @importFrom data.table := .N .SD
 "_PACKAGE"
+
+# data.table checks this flag for NSE operations (:=, .N, .SD) inside package code.
+.datatable.aware <- TRUE

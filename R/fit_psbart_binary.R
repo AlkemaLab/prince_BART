@@ -27,7 +27,7 @@
 #'   \item{trees}{Tree structures if \code{save_trees = TRUE}}
 #'
 #' @keywords internal
-.fit_psbart <- function(
+.fit_psbart_binary <- function(
   X,
   Y,
   Z,
@@ -48,7 +48,8 @@
   # Storage arrays
   s_nt <- s_at <- matrix(NA_real_, n_samples, n)
   trees <- list()
-  p_at <- p_nt <- m_y0co <- m_y1co <- m_y0nt <- m_y1at <- matrix(NA_real_, n_samples, n)
+  p_at <- p_nt <- m_y0co <- m_y1co <- m_y0nt <- m_y1at <-
+    matrix(NA_real_, n_samples, n)
 
   # Method-of-moment initial estimates
   if (n_initial > 0) {
@@ -79,7 +80,8 @@
 
   # Initialize samplers
   samplers <- initialize_samplers(X, Y, Z, W, co, at, nt, control, k,
-                                   intco, intat, intnt, inty0nt, inty1at, inty0co, inty1co)
+    intco, intat, intnt, inty0nt, inty1at, inty0co, inty1co
+  )
 
   # Sample from prior
   for (s in samplers) s$sampleTreesFromPrior()
@@ -249,7 +251,8 @@ compute_mom_estimates <- function(X, Y, Z, W) {
 }
 
 initialize_samplers <- function(X, Y, Z, W, co, at, nt, control, k,
-                                 intco, intat, intnt, inty0nt, inty1at, inty0co, inty1co) {
+  intco, intat, intnt, inty0nt, inty1at, inty0co, inty1co
+) {
 
   sampler_co <- dbarts_binary(
     X, co, test = X,
@@ -326,13 +329,17 @@ compute_posterior_class_prob <- function(Y, pco, pother, myco, myother) {
     (1 - Y) * (pco * (1 - myco) / (pco * (1 - myco) + pother * (1 - myother)))
 }
 
-update_samplers <- function(samplers, X, Y, Z, co, nt, at, i, n_initial, verbose) {
+update_samplers <- function(
+  samplers, X, Y, Z, co, nt, at, i, n_initial, verbose
+) {
   use_offset <- i >= n_initial
 
   if (sum(co) > 0) {
     if (use_offset) {
       dt_co <- dbarts::dbartsData(X, co, test = X, offset = 0)
-      dt_atnoco <- dbarts::dbartsData(X, at, test = X, subset = co == 0, offset = 0)
+      dt_atnoco <- dbarts::dbartsData(X, at, test = X
+        , subset = co == 0, offset = 0
+      )
     } else {
       dt_co <- dbarts::dbartsData(X, co, test = X)
       dt_atnoco <- dbarts::dbartsData(X, at, test = X, subset = co == 0)

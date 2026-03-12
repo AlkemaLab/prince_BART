@@ -13,7 +13,7 @@ get_mix_tau(p_arr, treated = NULL)
 
 - p_arr:
 
-  4D probability array from princebart fit.
+  4D probability array from prince_bart fit.
 
 - treated:
 

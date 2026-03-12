@@ -20,4 +20,4 @@ parse_psbart_formula(formula, data)
 
 ## Value
 
-A list with components X, Y, Z, W
+A list with components X, X_raw, Y, Z, W

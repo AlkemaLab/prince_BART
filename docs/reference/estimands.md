@@ -1,7 +1,7 @@
 # Treatment Effect Estimands for Compliers
 
 Internal functions to compute various treatment effect estimands for the
-complier stratum from a fitted princebart model.
+complier stratum from a fitted prince_bart model.
 
 ## Usage
 

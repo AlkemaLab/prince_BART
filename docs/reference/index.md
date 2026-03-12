@@ -17,9 +17,9 @@
   Stratification with BART
 - [`prince_BART()`](prince_BART.md) : Principal Stratification using
   BART
-- [`print(`*`<princebart>`*`)`](princebart-class.md)
-  [`summary(`*`<princebart>`*`)`](princebart-class.md)
-  [`coef(`*`<princebart>`*`)`](princebart-class.md) : S3 Methods for
-  princebart Objects
+- [`print(`*`<prince_bart>`*`)`](prince_bart-class.md)
+  [`summary(`*`<prince_bart>`*`)`](prince_bart-class.md)
+  [`coef(`*`<prince_bart>`*`)`](prince_bart-class.md) : S3 Methods for
+  prince_bart Objects
 - [`segment_heterogeneity()`](segment_heterogeneity.md) : Effect
   Heterogeneity by Segments

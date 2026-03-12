@@ -1,12 +1,13 @@
 #' Generalize Treatment Effects to External Populations (Transportability)
 #'
 #' Estimates Population Average Treatment Effects (PATE) in an external
-#' population using a fitted \code{princebart} model and external data, possibly from complex sample surveys.
+#' population using a fitted \code{prince_bart} model and external data
+#' , possibly from complex sample surveys.
 #' Assumes that covariates X capture all sources of effect heterogeneity,
 #' allowing the conditional complier effect CATE_C(x) to generalize to the
 #' target population.
 #'
-#' @param princebart_fit A fitted \code{princebart} object with \code{keep_trees = TRUE}.
+#' @param princebart_fit A fitted \code{prince_bart} object with \code{keep_trees = TRUE}.
 #' @param newdata A data.frame containing the external population (e.g., survey data).
 #'   Covariates present in the source data but missing from \code{newdata} will be
 #'   automatically detected and multiply imputed using auxiliary BART models.
@@ -97,8 +98,8 @@ general_BART <- function(
 ) {
 
   # Input validation
-  if (!inherits(princebart_fit, "princebart")) {
-    stop("princebart_fit must be a 'princebart' object")
+  if (!inherits(princebart_fit, "prince_bart")) {
+    stop("princebart_fit must be a 'prince_bart' object")
   }
   if (is.null(princebart_fit$trees)) {
     stop("princebart_fit must have saved trees (use keep_trees = TRUE)")
@@ -106,7 +107,7 @@ general_BART <- function(
 
   newdata <- as.data.frame(newdata)
   n_new <- nrow(newdata)
-  
+
   # Get chain/sample structure from princebart fit
   trees_df <- as.data.frame(princebart_fit$trees)
   n_chains <- length(unique(trees_df$chain))
@@ -131,40 +132,72 @@ general_BART <- function(
   }
 
   # Extract source data from princebart fit
-  source_X <- princebart_fit$data$X
+  validate_fit_covariate_contract(princebart_fit, require_raw = TRUE)
+  source_X <- get_fit_covariates(princebart_fit, type = "model")
   source_Z <- princebart_fit$data$Z
-
-  # Get scaling parameters - check for new format ($scaling) vs old format (attributes)
-  x_cols <- setdiff(colnames(source_X), "e")
-  
-  if (!is.null(princebart_fit$scaling)) {
-    # New format: X is stored unscaled, scaling in separate slot
-    scaled_center <- princebart_fit$scaling$center
-    scaled_scale  <- princebart_fit$scaling$scale
+  fit_uptake_type <- if (inherits(princebart_fit, "prince_bart_ordinal")) {
+    "ordinal"
+  } else if (inherits(princebart_fit, "prince_bart_binary")) {
+    "binary"
   } else {
-    # Old format: X is stored scaled, scaling in attributes
-    scaled_center <- attr(source_X, "scaled:center")
-    scaled_scale  <- attr(source_X, "scaled:scale")
-    
-    # Need to unscale source_X for consistency
-    if (!is.null(scaled_center) && !is.null(scaled_scale)) {
-      source_X_unscaled <- as.matrix(source_X[, x_cols, drop = FALSE])
-      for (j in seq_along(x_cols)) {
-        v <- x_cols[j]
-        if (v %in% names(scaled_center) && v %in% names(scaled_scale)) {
-          source_X_unscaled[, j] <- source_X_unscaled[, j] * scaled_scale[v] + scaled_center[v]
-        }
-      }
-      source_X_unscaled <- cbind(source_X_unscaled, e = source_X[, "e"])
-      source_X <- source_X_unscaled
-    }
+    NA_character_
   }
 
-  if (is.null(scaled_center) || is.null(scaled_scale)) {
-    # Fallback: compute from source X without e
-    source_X_no_e <- source_X[, x_cols, drop = FALSE]
-    scaled_center <- colMeans(source_X_no_e)
-    scaled_scale <- apply(source_X_no_e, 2, stats::sd)
+  source_group_prob <- NULL
+  if (identical(fit_uptake_type, "ordinal") &&
+      !is.null(princebart_fit$imp) && length(dim(princebart_fit$imp)) == 4) {
+    w0_imp <- princebart_fit$imp[, , "w0", , drop = FALSE]
+    w1_imp <- princebart_fit$imp[, , "w1", , drop = FALSE]
+    source_group_prob <- apply((w0_imp - w1_imp) == 1, 4, mean, na.rm = TRUE)
+  }
+
+  # Get scaling parameters from canonical fit metadata.
+  x_cols <- setdiff(colnames(source_X), "e")
+  scaled_center <- princebart_fit$scaling$center
+  scaled_scale  <- princebart_fit$scaling$scale
+
+  lambda_z0 <- 1
+  lambda_z1 <- 1
+  if (!is.null(princebart_fit$call)) {
+    if (!is.null(princebart_fit$call$lambda_z0)) {
+      lambda_z0 <- suppressWarnings(as.numeric(princebart_fit$call$lambda_z0))
+      if (!is.finite(lambda_z0)) lambda_z0 <- 1
+    }
+    if (!is.null(princebart_fit$call$lambda_z1)) {
+      lambda_z1 <- suppressWarnings(as.numeric(princebart_fit$call$lambda_z1))
+      if (!is.finite(lambda_z1)) lambda_z1 <- 1
+    }
+  }
+  w_max <- suppressWarnings(max(princebart_fit$data$W, na.rm = TRUE))
+  if (!is.finite(w_max)) w_max <- Inf
+
+  # Expand newdata to model-space columns when possible
+  # (e.g., ordered factors -> polynomial contrasts like education.L/Q).
+  missing_model_cols <- setdiff(colnames(source_X), c(colnames(newdata), "e"))
+  if (length(missing_model_cols) > 0) {
+    mm <- NULL
+
+    raw_cols <- colnames(princebart_fit$data$X_raw)
+    if (length(raw_cols) > 0 && all(raw_cols %in% colnames(newdata))) {
+      x_raw_new <- normalize_raw_covariates(newdata[, raw_cols, drop = FALSE])
+      mm_try <- try(stats::model.matrix(~ ., data = x_raw_new), silent = TRUE)
+      if (!inherits(mm_try, "try-error")) {
+        if ("(Intercept)" %in% colnames(mm_try)) {
+          mm_try <- mm_try[, colnames(mm_try) != "(Intercept)", drop = FALSE]
+        }
+        mm <- mm_try
+      }
+    }
+
+    if (!is.null(mm) && ncol(mm) > 0) {
+      mm_df <- as.data.frame(mm)
+      addable_cols <- intersect(missing_model_cols, colnames(mm_df))
+      if (length(addable_cols) > 0) {
+        for (nm in addable_cols) {
+          newdata[[nm]] <- mm_df[[nm]]
+        }
+      }
+    }
   }
 
   # Auto-detect missing covariates (source vars not in newdata)
@@ -202,7 +235,6 @@ general_BART <- function(
   if (length(mi_vars) > 0) {
     mi_array <- impute_missing_x(
       source_X = source_X[, x_cols, drop = FALSE],
-      source_data = princebart_fit$data,
       newdata = newdata,
       mi_vars = mi_vars,
       n_samples = n_samples,
@@ -239,6 +271,9 @@ general_BART <- function(
     scaled_center = scaled_center,
     scaled_scale = scaled_scale,
     x_cols = x_cols,
+    lambda_z0 = lambda_z0,
+    lambda_z1 = lambda_z1,
+    w_max = w_max,
     n_samples = n_samples,
     n_chains = n_chains,
     n_cores = n_cores,
@@ -284,6 +319,8 @@ general_BART <- function(
     newdata = newdata,
     source_X = source_X,
     source_Z = source_Z,
+    fit_uptake_type = fit_uptake_type,
+    source_group_prob = source_group_prob,
     trees = princebart_fit$trees,
     scaled_center = scaled_center,
     scaled_scale = scaled_scale,
@@ -303,7 +340,6 @@ general_BART <- function(
 # -----------------------------------------------------------------------------
 impute_missing_x <- function(
     source_X,
-    source_data,
     newdata,
     mi_vars,
     n_samples,
@@ -329,7 +365,7 @@ impute_missing_x <- function(
 
     # Fit BART on source data: v ~ common_vars
     x_train <- source_X[, common_vars, drop = FALSE]
-    y_train <- source_data$X[, v]
+    y_train <- source_X[, v]
 
     # Check if binary or continuous
     is_binary <- all(y_train %in% c(0, 1))
@@ -414,6 +450,9 @@ predict_external_outcomes <- function(
   scaled_center,
   scaled_scale,
   x_cols,
+  lambda_z0 = 1,
+  lambda_z1 = 1,
+  w_max = Inf,
   n_samples,
   n_chains,
   n_cores = 1,
@@ -475,14 +514,49 @@ predict_external_outcomes <- function(
 
     # Extract trees for this (iteration, chain) combination
     trees_s <- trees[trees$iteration == iter & trees$chain == ch, ]
+    if (nrow(trees_s) == 0) {
+      stop(
+        "No trees found for iteration ", iter,
+        " and chain ", ch,
+        "."
+      )
+    }
 
-    # Predict y0co
-    trees_y0 <- trees_s[trees_s$m == "y0co", ]
-    y0 <- predict_one_sample(trees_y0, x_scaled)
+    # Binary fits store y0co/y1co, ordinal fits store y0/y1.
+    y0_label <- if ("y0co" %in% unique(trees_s$m)) "y0co" else "y0"
+    y1_label <- if ("y1co" %in% unique(trees_s$m)) "y1co" else "y1"
 
-    # Predict y1co
-    trees_y1 <- trees_s[trees_s$m == "y1co", ]
-    y1 <- predict_one_sample(trees_y1, x_scaled)
+    x_for_y <- x_scaled
+    if (identical(y0_label, "y0") && identical(y1_label, "y1")) {
+      trees_z0 <- trees_s[trees_s$m == "z0", ]
+      trees_z1 <- trees_s[trees_s$m == "z1", ]
+      if (nrow(trees_z0) == 0 || nrow(trees_z1) == 0) {
+        stop(
+          "Ordinal prediction requires 'z0' and 'z1' tree components for iteration ",
+          iter, " chain ", ch, "."
+        )
+      }
+
+      mu_z0 <- predict_one_sample_raw(trees_z0, x_scaled)
+      mu_z1 <- predict_one_sample_raw(trees_z1, x_scaled)
+      w0_hat <- round_floor(ibc(mu_z0, lambda_z0), y_max = w_max)
+      w1_hat <- round_floor(ibc(mu_z1, lambda_z1), y_max = w_max)
+      x_for_y <- cbind(x_scaled, w0 = w0_hat, w1 = w1_hat)
+    }
+
+    # Predict y0
+    trees_y0 <- trees_s[trees_s$m == y0_label, ]
+    if (nrow(trees_y0) == 0) {
+      stop("Missing tree component '", y0_label, "' for iteration ", iter, " chain ", ch, ".")
+    }
+    y0 <- predict_one_sample(trees_y0, x_for_y)
+
+    # Predict y1
+    trees_y1 <- trees_s[trees_s$m == y1_label, ]
+    if (nrow(trees_y1) == 0) {
+      stop("Missing tree component '", y1_label, "' for iteration ", iter, " chain ", ch, ".")
+    }
+    y1 <- predict_one_sample(trees_y1, x_for_y)
 
     list(y0 = y0, y1 = y1, iter_idx = iter_idx, chain_idx = chain_idx)
   }
@@ -531,26 +605,54 @@ predict_external_outcomes <- function(
 # Helper: predict from one sample's trees
 predict_one_sample <- function(trees, x) {
   trees <- as.data.frame(trees)
+  if (nrow(trees) == 0) {
+    stop("No trees available for this posterior sample/model component")
+  }
   n_trees <- max(trees$tree)
 
   preds <- sapply(seq_len(n_trees), function(i) {
-    get_predictions_for_tree(trees[trees$tree == i, ], x)
+    one_tree <- trees[trees$tree == i, ]
+    if (nrow(one_tree) == 0) {
+      stop("Missing tree id ", i, " in posterior sample component")
+    }
+    get_predictions_for_tree(one_tree, x)
   })
 
   stats::pnorm(rowSums(preds))
 }
 
 
+predict_one_sample_raw <- function(trees, x) {
+  trees <- as.data.frame(trees)
+  if (nrow(trees) == 0) {
+    stop("No trees available for raw posterior sample/model component")
+  }
+  n_trees <- max(trees$tree)
+
+  preds <- sapply(seq_len(n_trees), function(i) {
+    one_tree <- trees[trees$tree == i, ]
+    if (nrow(one_tree) == 0) {
+      stop("Missing tree id ", i, " in raw posterior sample component")
+    }
+    get_predictions_for_tree(one_tree, x)
+  })
+
+  rowSums(preds)
+}
+
+
 # -----------------------------------------------------------------------------
-# Helper: Compute generalizability overlap s = P(complier|X) * P(in_source|X)
+# Helper: Compute generalizability overlap s = P(group|X) * P(in_source|X)
 # -----------------------------------------------------------------------------
 #' Compute Generalizability Overlap
 #'
-#' Estimates the selection score s = P(complier|X, in_source) * P(in_source|X)
+#' Estimates the selection score s = P(group|X, in_source) * P(in_source|X)
 #' for assessing generalizability from source study to external population.
-#' Missing covariates are single-imputed using BART mean predictions.
+#' For binary fits, group is the complier stratum. For ordinal fits, group is
+#' the affected set defined by W(0)-W(1)=1; this ordinal diagnostic is
+#' experimental. Missing covariates are single-imputed using BART mean predictions.
 #'
-#' @param princebart_fit A fitted \code{princebart} object with saved trees.
+#' @param princebart_fit A fitted \code{prince_bart} object with saved trees.
 #' @param newdata External population data. Covariates missing from source model
 #'   will be auto-detected and single-imputed using BART.
 #' @param weights Survey weights for external data.
@@ -558,7 +660,7 @@ predict_one_sample <- function(trees, x) {
 #'
 #' @return A list with:
 #'   \itemize{
-#'     \item \code{pi_c}: P(complier|X, in_source) for each external unit
+#'     \item \code{pi_c}: P(group|X, in_source) for each external unit
 #'     \item \code{pi_t}: P(in_source|X) for each external unit
 #'     \item \code{pi_s}: Selection score s = pi_c * pi_t
 #'     \item \code{e_s_tilde}: Standardized selection score (logit, then z-score)
@@ -572,8 +674,9 @@ compute_generalizability_overlap <- function(
   weights = NULL,
   verbose = FALSE
 ) {
+  validate_fit_covariate_contract(princebart_fit, require_raw = TRUE)
 
-  source_X <- princebart_fit$data$X
+  source_X <- get_fit_covariates(princebart_fit, type = "model")
   x_cols <- setdiff(colnames(source_X), "e")
   n_source <- nrow(source_X)
   n_new    <- nrow(newdata)
@@ -582,35 +685,10 @@ compute_generalizability_overlap <- function(
     weights <- rep(1, n_new)
   }
 
-  # Get scaling parameters - check for new format ($scaling) vs old format (attributes)
-  if (!is.null(princebart_fit$scaling)) {
-    # New format: X is stored unscaled, scaling in separate slot
-    scaled_center <- princebart_fit$scaling$center
-    scaled_scale  <- princebart_fit$scaling$scale
-    source_X_unscaled <- as.data.frame(source_X[, x_cols, drop = FALSE])
-  } else {
-    # Old format: X is stored scaled, scaling in attributes - need to unscale
-    scaled_center <- attr(source_X, "scaled:center")
-    scaled_scale <- attr(source_X, "scaled:scale")
-
-    source_X_unscaled <- as.matrix(source_X[, x_cols, drop = FALSE])
-    if (!is.null(scaled_scale) && !is.null(scaled_center)) {
-      for (j in seq_along(x_cols)) {
-        v <- x_cols[j]
-        if (v %in% names(scaled_center) && v %in% names(scaled_scale)) {
-          source_X_unscaled[, j] <- source_X_unscaled[, j] * scaled_scale[v] + scaled_center[v]
-        }
-      }
-    }
-    source_X_unscaled <- as.data.frame(source_X_unscaled)
-  }
+  scaled_center <- princebart_fit$scaling$center
+  scaled_scale  <- princebart_fit$scaling$scale
+  source_X_unscaled <- as.data.frame(source_X[, x_cols, drop = FALSE])
   colnames(source_X_unscaled) <- x_cols
-
-  # Fallback if no scaling info
-  if (is.null(scaled_center) || is.null(scaled_scale)) {
-    scaled_center <- colMeans(source_X_unscaled)
-    scaled_scale <- apply(source_X_unscaled, 2, stats::sd)
-  }
 
   # Auto-detect missing covariates
   missing_cols <- setdiff(x_cols, colnames(newdata))
@@ -678,15 +756,11 @@ compute_generalizability_overlap <- function(
 
   if (verbose) message("  Predicting P(complier|X, in_source)...")
 
-  # Predict P(complier|X) using "co" trees
+  # Predict P(group|X):
+  # - binary fit -> complier probability via "co" trees
+  # - ordinal fit -> affected probability via imp draws
   trees <- as.data.frame(princebart_fit$trees)
   trees_co <- trees[trees$m == "co", ]
-
-  # Use stored scaling parameters if available, otherwise compute from unscaled
-  if (is.null(scaled_center) || is.null(scaled_scale)) {
-    scaled_center <- colMeans(source_X_unscaled)
-    scaled_scale <- apply(source_X_unscaled, 2, stats::sd)
-  }
 
   # Fit instrument propensity e = P(Z|X) using unscaled covariates
   source_Z <- princebart_fit$data$Z
@@ -714,24 +788,70 @@ compute_generalizability_overlap <- function(
                         scale = scaled_scale)
   x_scaled_new <- cbind(x_scaled_new, e = stats::qnorm(e_new))
   
-  # source_X is already scaled, just use it directly with its e column
+  # Trees expect scaled model-space covariates + unscaled propensity column e
   source_x_scaled <- as.matrix(source_X[, x_cols, drop = FALSE])
+  source_x_scaled <- scale(source_x_scaled,
+                           center = scaled_center,
+                           scale = scaled_scale)
   source_x_scaled <- cbind(source_x_scaled, e = source_X[, "e"])
 
-  # Predict pi_c for external data (average over samples)
-  samples <- unique(trees_co$iteration)
-  pi_c_mat <- sapply(samples, function(s) {
-    trees_s <- trees_co[trees_co$iteration == s, ]
-    predict_one_sample(trees_s, x_scaled_new)
-  })
-  pi_c_new <- rowMeans(pi_c_mat)
+  if (inherits(princebart_fit, "prince_bart_binary")) {
+    # Binary fit path: use saved complier trees.
+    if (nrow(trees_co) == 0) {
+      stop("Binary overlap requires saved 'co' trees, but none were found")
+    }
+    samples <- unique(trees_co$iteration)
 
-  # Predict pi_c for source data
-  pi_c_source_mat <- sapply(samples, function(s) {
-    trees_s <- trees_co[trees_co$iteration == s, ]
-    predict_one_sample(trees_s, source_x_scaled)
-  })
-  pi_c_source <- rowMeans(pi_c_source_mat)
+    pi_c_mat <- sapply(samples, function(s) {
+      trees_s <- trees_co[trees_co$iteration == s, ]
+      predict_one_sample(trees_s, x_scaled_new)
+    })
+    pi_c_mat <- as.matrix(pi_c_mat)
+    if (nrow(pi_c_mat) != n_new) {
+      pi_c_mat <- matrix(pi_c_mat, nrow = n_new)
+    }
+    pi_c_new <- rowMeans(pi_c_mat)
+
+    pi_c_source_mat <- sapply(samples, function(s) {
+      trees_s <- trees_co[trees_co$iteration == s, ]
+      predict_one_sample(trees_s, source_x_scaled)
+    })
+    pi_c_source_mat <- as.matrix(pi_c_source_mat)
+    if (nrow(pi_c_source_mat) != n_source) {
+      pi_c_source_mat <- matrix(pi_c_source_mat, nrow = n_source)
+    }
+    pi_c_source <- rowMeans(pi_c_source_mat)
+  } else if (inherits(princebart_fit, "prince_bart_ordinal")) {
+    # Ordinal fit path: estimate affected probability from imp draws.
+    if (verbose) {
+      message("  Using experimental ordinal overlap diagnostic (affected-unit probability)")
+    }
+    if (is.null(princebart_fit$imp) || length(dim(princebart_fit$imp)) != 4) {
+      stop("Cannot compute ordinal overlap: fit has no valid imp array")
+    }
+
+    imp <- princebart_fit$imp
+    w0_imp <- imp[, , "w0", , drop = FALSE]
+    w1_imp <- imp[, , "w1", , drop = FALSE]
+    pi_c_source <- apply((w0_imp - w1_imp) == 1, 4, mean, na.rm = TRUE)
+
+    pi_c_bart <- dbarts::bart2(
+      source_X_unscaled[, x_cols, drop = FALSE],
+      pi_c_source,
+      keepTrees = TRUE,
+      verbose = FALSE
+    )
+
+    pi_c_new <- colMeans(
+      stats::pnorm(
+        stats::predict(pi_c_bart, newdata = newdata[, x_cols, drop = FALSE])
+      )
+    )
+    pi_c_new <- pmax(pmin(pi_c_new, 0.999), 0.001)
+    pi_c_source <- pmax(pmin(pi_c_source, 0.999), 0.001)
+  } else {
+    stop("Unsupported prince_bart subclass for overlap computation")
+  }
 
   # Compute selection scores
   pi_s_new <- pi_c_new * pi_t_new
@@ -904,7 +1024,7 @@ find_shift_weights <- function(inf, gamma, y, wts = NULL) {
   )
 
   problem <- CVXR::Problem(objective, constraints = constraints)
-  result <- CVXR::solve(problem, solver = "ECOS")
+  result <- solve(problem, solver = "ECOS")
 
   if (result$status != "optimal") {
     warning("Optimization did not converge, returning uniform weights")
@@ -925,6 +1045,8 @@ find_shift_weights <- function(inf, gamma, y, wts = NULL) {
 #'
 #' Compute generalizability overlap scores and optionally trim observations
 #' with low overlap to produce a trimmed PATE estimate.
+#' For binary fits, overlap is based on complier similarity. For ordinal fits,
+#' overlap uses an affected-unit analogue (W(0)-W(1)=1), which is experimental.
 #'
 #' @param object A `general_pate` object from [general_BART()]
 #' @param threshold Numeric threshold for trimming based on standardized
@@ -936,7 +1058,8 @@ find_shift_weights <- function(inf, gamma, y, wts = NULL) {
 #'
 #' @return A list with components:
 #' \describe{
-#'   \item{overlap}{Data frame with overlap metrics: pi_c, pi_t, pi_s, e_s_tilde}
+#'   \item{overlap}{Data frame with overlap metrics: pi_c, pi_t, pi_s, e_s_tilde
+#'   where pi_c is group probability (complier for binary; affected for ordinal)}
 #'   \item{e_s_tilde_source}{Standardized selection scores for source data}
 #'   \item{n_trimmed}{Number of observations trimmed (if threshold used)}
 #'   \item{pate_trimmed}{Trimmed PATE estimate (if threshold used)}
@@ -953,10 +1076,10 @@ find_shift_weights <- function(inf, gamma, y, wts = NULL) {
 #'
 #' @export
 general_BART_overlap <- function(
-    object,
-    threshold = NULL,
-    overlap_value = c("zero", "NA"),
-    verbose = FALSE
+  object
+  , threshold = NULL
+  , overlap_value = c("zero", "NA")
+  , verbose = FALSE
 ) {
   if (!inherits(object, "general_pate")) {
     stop("object must be a 'general_pate' object from general_BART()")
@@ -973,34 +1096,26 @@ general_BART_overlap <- function(
   trees <- object$trees
   scaled_center <- object$scaled_center
   scaled_scale <- object$scaled_scale
+  fit_uptake_type <- object$fit_uptake_type
+  source_group_prob <- object$source_group_prob
   # weights <- object$weights # removed unused variable
+
+  if (is.null(scaled_center) || is.null(scaled_scale)) {
+    stop(
+      "general_BART_overlap() requires scaling metadata in general_pate object. ",
+      "Please rerun general_BART() with the current package version."
+    )
+  }
+
+  if (is.null(fit_uptake_type)) {
+    trees_tmp <- as.data.frame(trees)
+    fit_uptake_type <- if (any(trees_tmp$m == "co")) "binary" else "ordinal"
+  }
 
   x_cols <- setdiff(colnames(source_X), "e")
   n_source <- nrow(source_X)
   n_new <- nrow(newdata)
-
-  # source_X is now stored unscaled (new format) or may need unscaling (old format)
-  # Check by seeing if values look scaled (centered near 0) vs original scale
-  # For backwards compatibility, check if scaling params exist and X looks scaled
   source_X_unscaled <- as.data.frame(source_X[, x_cols, drop = FALSE])
-  
-  # Heuristic: if X values are mostly between -5 and 5, likely scaled
-  x_range <- range(as.matrix(source_X_unscaled), na.rm = TRUE)
-  likely_scaled <- !is.null(scaled_center) && !is.null(scaled_scale) && 
-                   x_range[1] > -10 && x_range[2] < 10 && 
-                   abs(mean(as.matrix(source_X_unscaled))) < 1
-  
-  if (likely_scaled) {
-    # Old format: need to unscale
-    source_X_unscaled <- as.matrix(source_X_unscaled)
-    for (j in seq_along(x_cols)) {
-      v <- x_cols[j]
-      if (v %in% names(scaled_center) && v %in% names(scaled_scale)) {
-        source_X_unscaled[, j] <- source_X_unscaled[, j] * scaled_scale[v] + scaled_center[v]
-      }
-    }
-    source_X_unscaled <- as.data.frame(source_X_unscaled)
-  }
   colnames(source_X_unscaled) <- x_cols
 
   # Auto-detect and single-impute missing covariates
@@ -1060,9 +1175,9 @@ general_BART_overlap <- function(
   pi_t_source <- pi_t_all[seq_len(n_source)]
   pi_t_new <- pi_t_all[seq(n_source + 1, n_source + n_new)]
 
-  if (verbose) message("  Predicting P(complier|X, in_source)...")
+  if (verbose) message("  Predicting P(group|X, in_source)...")
 
-  # Predict P(complier|X) using "co" trees
+  # Predict P(group|X)
   trees_df <- as.data.frame(trees)
   trees_co <- trees_df[trees_df$m == "co", ]
 
@@ -1090,19 +1205,61 @@ general_BART_overlap <- function(
   source_x_scaled <- scale(source_x_scaled, center = scaled_center, scale = scaled_scale)
   source_x_scaled <- cbind(source_x_scaled, e = source_X[, "e"])
 
-  # Predict pi_c for external and source data
-  samples <- unique(trees_co$iteration)
-  pi_c_mat <- sapply(samples, function(s) {
-    trees_s <- trees_co[trees_co$iteration == s, ]
-    predict_one_sample(trees_s, x_scaled_new)
-  })
-  pi_c_new <- rowMeans(pi_c_mat)
+  if (identical(fit_uptake_type, "binary")) {
+    if (nrow(trees_co) == 0) {
+      stop("Binary overlap requires saved 'co' trees, but none were found")
+    }
 
-  pi_c_source_mat <- sapply(samples, function(s) {
-    trees_s <- trees_co[trees_co$iteration == s, ]
-    predict_one_sample(trees_s, source_x_scaled)
-  })
-  pi_c_source <- rowMeans(pi_c_source_mat)
+    samples <- unique(trees_co$iteration)
+    pi_c_mat <- sapply(samples, function(s) {
+      trees_s <- trees_co[trees_co$iteration == s, ]
+      predict_one_sample(trees_s, x_scaled_new)
+    })
+    pi_c_mat <- as.matrix(pi_c_mat)
+    if (nrow(pi_c_mat) != n_new) {
+      pi_c_mat <- matrix(pi_c_mat, nrow = n_new)
+    }
+    pi_c_new <- rowMeans(pi_c_mat)
+
+    pi_c_source_mat <- sapply(samples, function(s) {
+      trees_s <- trees_co[trees_co$iteration == s, ]
+      predict_one_sample(trees_s, source_x_scaled)
+    })
+    pi_c_source_mat <- as.matrix(pi_c_source_mat)
+    if (nrow(pi_c_source_mat) != n_source) {
+      pi_c_source_mat <- matrix(pi_c_source_mat, nrow = n_source)
+    }
+    pi_c_source <- rowMeans(pi_c_source_mat)
+  } else if (identical(fit_uptake_type, "ordinal")) {
+    if (verbose) {
+      message("  Using experimental ordinal overlap diagnostic (affected-unit probability)")
+    }
+    if (is.null(source_group_prob) || length(source_group_prob) != n_source) {
+      stop(
+        "Ordinal overlap requires source_group_prob in the general_pate object. ",
+        "Please rerun general_BART() with the current package version."
+      )
+    }
+
+    pi_c_source <- as.numeric(source_group_prob)
+    pi_c_source <- pmax(pmin(pi_c_source, 0.999), 0.001)
+
+    pi_c_bart <- dbarts::bart2(
+      source_X_unscaled[, x_cols, drop = FALSE],
+      pi_c_source,
+      keepTrees = TRUE,
+      verbose = FALSE
+    )
+
+    pi_c_new <- colMeans(
+      stats::pnorm(
+        stats::predict(pi_c_bart, newdata = newdata[, x_cols, drop = FALSE])
+      )
+    )
+    pi_c_new <- pmax(pmin(pi_c_new, 0.999), 0.001)
+  } else {
+    stop("Unsupported or unknown fit_uptake_type in general_pate object")
+  }
 
   # Compute selection scores
   pi_s_new <- pi_c_new * pi_t_new

@@ -12,7 +12,7 @@ compute_generalizability_overlap(
 )
 }
 \arguments{
-\item{princebart_fit}{A fitted \code{princebart} object with saved trees.}
+\item{princebart_fit}{A fitted \code{prince_bart} object with saved trees.}
 
 \item{newdata}{External population data. Covariates missing from source model
 will be auto-detected and single-imputed using BART.}
@@ -24,7 +24,7 @@ will be auto-detected and single-imputed using BART.}
 \value{
 A list with:
 \itemize{
-\item \code{pi_c}: P(complier|X, in_source) for each external unit
+\item \code{pi_c}: P(group|X, in_source) for each external unit
 \item \code{pi_t}: P(in_source|X) for each external unit
 \item \code{pi_s}: Selection score s = pi_c * pi_t
 \item \code{e_s_tilde}: Standardized selection score (logit, then z-score)
@@ -32,7 +32,9 @@ A list with:
 }
 }
 \description{
-Estimates the selection score s = P(complier|X, in_source) * P(in_source|X)
+Estimates the selection score s = P(group|X, in_source) * P(in_source|X)
 for assessing generalizability from source study to external population.
-Missing covariates are single-imputed using BART mean predictions.
+For binary fits, group is the complier stratum. For ordinal fits, group is
+the affected set defined by W(0)-W(1)=1; this ordinal diagnostic is
+experimental. Missing covariates are single-imputed using BART mean predictions.
 }
