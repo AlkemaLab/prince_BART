@@ -73,7 +73,7 @@ satt_c <- function(prince_bart_fit, induce_residual_corr = FALSE) {
 get_mix_tau <- function(p_arr, treated = NULL) {
   if (is.null(treated)) {
     treated <- rep(TRUE, dim(p_arr)[4])
-    outname <- c("Y(0) | compliers", "Y(1) | compliers", "Y(0) | never-takers", 
+    outname <- c("Y(0) | compliers", "Y(1) | compliers", "Y(0) | never-takers",
                  "Y(1) | always-takers", "Mixed ATE for compliers")
     sname <- c("compliers", "never-takers", "always-takers")
   } else {
@@ -88,18 +88,19 @@ get_mix_tau <- function(p_arr, treated = NULL) {
   # Variable indices: 1=p_a, 2=p_n, 3:6=outcomes
   p_a_arr <- p_arr[, , 1, treated, drop = FALSE]  # (iter, chain, 1, n_treated)
   p_n_arr <- p_arr[, , 2, treated, drop = FALSE]  # (iter, chain, 1, n_treated)
-  
+
   # Compute p_c = 1 - p_n - p_a
   p_c_arr <- 1 - p_n_arr - p_a_arr
-  
+  dimnames(p_c_arr)$variable <- "p_c" #otherwise inherits incorrect name
+
   # Reshape: aperm to move variable dim to end, then select that dim
   # From (iter, chain, 1, units) -> (iter, chain, units, 1)
   p_a <- aperm(p_a_arr, c(1, 2, 4, 3))[, , , 1, drop = FALSE]
   p_n <- aperm(p_n_arr, c(1, 2, 4, 3))[, , , 1, drop = FALSE]
   p_c <- aperm(p_c_arr, c(1, 2, 4, 3))[, , , 1, drop = FALSE]
-  
+
   # Now p_a, p_n, p_c are (iter, chain, units, 1). Use abind to stack along dim 4
-  p_g <- abind::abind(p_a, p_n, p_c, along = 4)  # Result: (iter, chain, units, 3)
+  p_g <- abind::abind(p_c, p_n, p_a, along = 4)  # Result: (iter, chain, units, 3)
   
   strata_prob <- apply(p_g, c(1:2, 4), mean)  # Keep iter, chain, strata; average units
 
@@ -107,15 +108,17 @@ get_mix_tau <- function(p_arr, treated = NULL) {
   # Reshape: aperm to move var dim to end
   # From (iter, chain, 4, units) -> (iter, chain, units, 4)
   m_y <- aperm(m_y_arr, c(1, 2, 4, 3))
-  
-  str <- c(1, 1, 2, 3)
+
+  str_y <- c("m_y0c", "m_y1c", "m_y0n", "m_y1a")
+  str_p <- c("p_c", "p_c", "p_n", "p_a")
 
   mean_pout <- lapply(1:4, function(g) {
     # m_y[, , , g] is (iter, chain, units)
     # p_g[, , , str[g]] is (iter, chain, units)
-    numer <- apply(m_y[, , , g] * p_g[, , , str[g]], 1:2, mean)
-    numer / strata_prob[, , str[g]]
+    numer <- apply(m_y[, , , str_y[g]] * p_g[, , , str_p[g]], 1:2, mean)
+    numer / strata_prob[, , str_p[g]]
   })
+
 
   mean_effect <- mean_pout
   mean_effect$tau <- mean_pout[[2]] - mean_pout[[1]]
