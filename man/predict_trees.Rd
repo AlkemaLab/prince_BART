@@ -7,13 +7,13 @@
 predict_trees(trees, newdata, scaling = NULL, n_cores = 1)
 }
 \arguments{
-\item{trees}{A data.frame of tree structures from a princebart fit.}
+\item{trees}{A data.frame of tree structures from a prince_bart fit.}
 
 \item{newdata}{A matrix of covariates for prediction (can be unscaled if
 scaling is provided), or a list of matrices (one per posterior sample).}
 
 \item{scaling}{Optional list with \code{center} and \code{scale} named vectors for
-standardizing newdata before prediction. Typically from \code{princebart_fit$scaling}.
+standardizing newdata before prediction. Typically from \code{prince_bart_fit$scaling}.
 If NULL, newdata is assumed to already be scaled.}
 
 \item{n_cores}{Number of cores for parallel prediction (default: 1).}
@@ -24,5 +24,5 @@ and columns for posterior samples.
 }
 \description{
 Generate predictions for new data using saved tree structures from
-a princebart fit.
+a prince_bart fit.
 }

@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">princeBART</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,8 +36,10 @@
 <li><a class="dropdown-item" href="../articles/introduction.html">Introduction</a></li>
     <li><a class="dropdown-item" href="../articles/generalizing.html">Generalizing</a></li>
     <li><a class="dropdown-item" href="../articles/simulation.html">Simulation</a></li>
+    <li><a class="dropdown-item" href="../articles/ordinal.html">Ordinal Uptake</a></li>
   </ul>
 </li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
@@ -60,7 +62,7 @@
                         <h4 data-toc-skip class="author">princeBART
 authors</h4>
             
-            <h4 data-toc-skip class="date">2026-01-22</h4>
+            <h4 data-toc-skip class="date">2026-03-12</h4>
       
 
       <div class="d-none name"><code>simulation.Rmd</code></div>
@@ -166,10 +168,11 @@ more extreme propensity scores.</p>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va">abind</span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://ggplot2.tidyverse.org" class="external-link">ggplot2</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://tidyverse.tidyverse.org" class="external-link">tidyverse</a></span><span class="op">)</span></span>
+<span><span class="co">#&gt; Warning: package 'tibble' was built under R version 4.4.3</span></span>
 <span><span class="co">#&gt; ── <span style="font-weight: bold;">Attaching core tidyverse packages</span> ──────────────────────── tidyverse 2.0.0 ──</span></span>
 <span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">dplyr    </span> 1.1.4     <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">readr    </span> 2.1.5</span></span>
 <span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">forcats  </span> 1.0.0     <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">stringr  </span> 1.5.2</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">lubridate</span> 1.9.4     <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">tibble   </span> 3.3.0</span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">lubridate</span> 1.9.4     <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">tibble   </span> 3.3.1</span></span>
 <span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">purrr    </span> 1.1.0     <span style="color: #00BB00;">✔</span> <span style="color: #0000BB;">tidyr    </span> 1.3.1</span></span>
 <span><span class="co">#&gt; ── <span style="font-weight: bold;">Conflicts</span> ────────────────────────────────────────── tidyverse_conflicts() ──</span></span>
 <span><span class="co">#&gt; <span style="color: #BB0000;">✖</span> <span style="color: #0000BB;">dplyr</span>::<span style="color: #00BB00;">count()</span>   masks <span style="color: #0000BB;">matrixStats</span>::count()</span></span>
@@ -323,7 +326,9 @@ more extreme propensity scores.</p>
 <span><span class="co"># PStrata fitter (uses pre-compiled model)</span></span>
 <span><span class="va">pstrata_fitter</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">data</span>, <span class="va">mcmc_iters</span> <span class="op">=</span> <span class="fl">200</span>, <span class="va">pre_fit</span> <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span> <span class="op">{</span></span>
 <span>  <span class="va">psobj</span> <span class="op">&lt;-</span> <span class="fu">ps_obj</span><span class="op">(</span><span class="va">data</span><span class="op">)</span></span>
-<span>  <span class="va">ps_fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/pkg/PStrata/man/PStrata.html" class="external-link">PStrata</a></span><span class="op">(</span><span class="va">psobj</span>, cores <span class="op">=</span> <span class="fl">1</span>, chains <span class="op">=</span> <span class="fl">1</span>, iter <span class="op">=</span> <span class="va">mcmc_iters</span>, fit <span class="op">=</span> <span class="va">pre_fit</span><span class="op">)</span></span>
+<span>  <span class="va">ps_fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/pkg/PStrata/man/PStrata.html" class="external-link">PStrata</a></span><span class="op">(</span></span>
+<span>    <span class="va">psobj</span>, cores <span class="op">=</span> <span class="fl">1</span>, chains <span class="op">=</span> <span class="fl">1</span>, iter <span class="op">=</span> <span class="va">mcmc_iters</span>, fit <span class="op">=</span> <span class="va">pre_fit</span></span>
+<span>  <span class="op">)</span></span>
 <span>  <span class="fu">mixed_complier_effect</span><span class="op">(</span><span class="fu">fitted_pstrata</span><span class="op">(</span><span class="va">ps_fit</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span></span></code></pre></div>
 </div>
@@ -387,17 +392,21 @@ more extreme propensity scores.</p>
 </h2>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Simulation parameters (reduced for vignette)</span></span>
-<span><span class="va">m</span> <span class="op">&lt;-</span> <span class="fl">20</span>          <span class="co"># iterations (paper uses 400)</span></span>
+<span><span class="va">m</span> <span class="op">&lt;-</span> <span class="fl">2</span>          <span class="co"># iterations (paper uses 400)</span></span>
 <span><span class="va">designs</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"A"</span>, <span class="st">"C"</span><span class="op">)</span></span>
 <span><span class="va">deltas</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.02</span>, <span class="fl">0.05</span><span class="op">)</span></span>
 <span><span class="va">ns</span> <span class="op">&lt;-</span> <span class="fl">400</span></span></code></pre></div>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">0203</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Using too many multisession workers can overwhelm laptops and increases the</span></span>
-<span><span class="co"># chance of interruptions/timeouts. Keep this modest by default.</span></span>
-<span><span class="va">workers</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="fl">10L</span>, <span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://parallelly.futureverse.org/reference/availableCores.html" class="external-link">availableCores</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="va">multisession</span>, workers <span class="op">=</span> <span class="va">workers</span><span class="op">)</span></span>
+<span><span class="co"># Save and restore plan so worker teardown happens before knitr exits.</span></span>
+<span><span class="va">old_plan</span> <span class="op">&lt;-</span> <span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="va">old_plan</span><span class="op">)</span>, add <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Heavy Stan/BART calls inside each worker can exhaust memory if worker count</span></span>
+<span><span class="co"># is too high. Keep this conservative for stable vignette rendering.</span></span>
+<span><span class="va">workers</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="fl">2L</span>, <span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://parallelly.futureverse.org/reference/availableCores.html" class="external-link">availableCores</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu">future</span><span class="fu">::</span><span class="fu"><a href="https://future.futureverse.org/reference/plan.html" class="external-link">plan</a></span><span class="op">(</span><span class="fu">future</span><span class="fu">::</span><span class="va"><a href="https://future.futureverse.org/reference/multisession.html" class="external-link">multisession</a></span>, workers <span class="op">=</span> <span class="va">workers</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Compile PStrata Stan model once</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Compiling PStrata model...\n"</span><span class="op">)</span></span>
@@ -434,8 +443,7 @@ more extreme propensity scores.</p>
 <span>    <span class="op">)</span></span>
 <span>  <span class="op">}</span></span>
 <span><span class="op">}</span></span>
-<span><span class="co"># Save for latter use</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS</a></span><span class="op">(</span><span class="va">sim_results</span>, file <span class="op">=</span> <span class="st">"vignettes/sim_results.rds"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co"># To regenerate: saveRDS(sim_results, file = "inst/extdata/sim_results.rds")</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="results">Results<a class="anchor" aria-label="anchor" href="#results"></a>
@@ -444,11 +452,8 @@ more extreme propensity scores.</p>
 <h3 id="compile-metrics">Compile Metrics<a class="anchor" aria-label="anchor" href="#compile-metrics"></a>
 </h3>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Load precomputed results if available</span></span>
-<span></span>
-<span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/files.html" class="external-link">file.exists</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"sim_results.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">sim_results</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, <span class="st">"sim_results.rds"</span>, package <span class="op">=</span> <span class="st">"princeBART"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">}</span></span>
+<code class="sourceCode R"><span><span class="co"># Load precomputed results</span></span>
+<span><span class="va">sim_results</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS</a></span><span class="op">(</span><span class="fu">.extdata</span><span class="op">(</span><span class="st">"sim_results.rds"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">results_df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/expand.grid.html" class="external-link">expand.grid</a></span><span class="op">(</span>design <span class="op">=</span> <span class="va">designs</span>, delta <span class="op">=</span> <span class="va">deltas</span><span class="op">)</span> <span class="op">|&gt;</span></span>
 <span>  <span class="fu"><a href="https://dplyr.tidyverse.org/reference/rowwise.html" class="external-link">rowwise</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span>

@@ -8,7 +8,7 @@ and runs multiple chains.
 ## Usage
 
 ``` r
-.fit_psbart(
+.fit_psbart_binary(
   X,
   Y,
   Z,

@@ -1,0 +1,345 @@
+---
+title: "Prince BART with Ordinal Uptake"
+author: "princeBART authors"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Prince BART with Ordinal Uptake}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = TRUE,
+  fig.width = 8,
+  fig.height = 5,
+  out.width = "100%"
+)
+library(princeBART)
+.extdata <- function(fname) {
+  f <- system.file("extdata", fname, package = "princeBART")
+  if (nzchar(f) && file.exists(f)) return(f)
+  vdir <- tryCatch(
+    dirname(normalizePath(knitr::current_input())),
+    error = function(e) getwd()
+  )
+  f <- normalizePath(file.path(vdir, "..", "inst", "extdata", fname), mustWork = FALSE)
+  if (file.exists(f)) return(f)
+  stop("Cannot find extdata/", fname)
+}
+```
+
+## Overview
+
+While earlier vignettes focus on binary treatment uptake, many empirical
+applications involve treatments that take multiple ordered values. This
+vignette illustrates how `princeBART` can be used when the treatment is
+**discrete with more than two levels**, using fertility (number of children) as
+a motivating example.
+
+We consider a setting in which:
+
+* **Z**: current infecundity indicator (instrument)
+* **W**: number of children ever born (treatment)
+* **Y**: employment (outcome)
+* **X**: baseline covariates such as age, education, and urban residence
+
+The number of children is a **discrete, non-negative variable with a finite
+range** (e.g., 0–8 children in the simulated data below). This differs from the
+binary uptake case but fits naturally within the Prince BART framework.
+
+For binary uptake, the IV estimand can be interpreted as the average effect of
+switching from untreated to treated among compliers. With multivalued uptake,
+the instrument can shift treatment by different magnitudes across units.
+In `princeBART`, the primary ordinal contrast focuses on units with
+`W(0) - W(1) = 1`, that is, units whose treatment is shifted by exactly one
+unit by the instrument. In this fertility-style example, the corresponding
+summary can be interpreted as the average impact of one additional child on
+employment for women in that one-unit-shift principal stratum.
+
+This example is inspired by applications where current infecundity is used as
+an instrument for fertility and employment is the outcome of interest. See the
+methodological and empirical application in:
+
+https://arxiv.org/abs/2508.10787
+
+Conceptually, this vignette combines two ideas illustrated separately in
+earlier vignettes:
+
+1. **Detecting treatment effect heterogeneity** using conditional effects among
+  units with a one-unit treatment shift (`W(0) - W(1) = 1`).
+2. **Generalizing those conditional effects** to a broader population by
+   averaging over a target covariate distribution.
+
+In this example, the target population is defined **within the same survey
+dataset**, rather than through a separate external dataset.
+
+## Setup
+
+We observe:
+
+* **Z**: binary instrument
+* **W**: ordinal treatment taking values `0, 1, ..., J`
+* **Y**: binary outcome
+* **X**: baseline covariates
+
+Our goal is to estimate conditional effects for one-unit treatment changes
+(`W(0) - W(1) = 1`) and summarize how these effects vary across values of `X`.
+
+## Identification Assumptions
+
+The analysis relies on standard instrumental-variable assumptions adapted to the
+multivalued-treatment setting.
+
+1. **Conditional unconfoundedness of the instrument given X**
+   After adjusting for observed covariates `X`, the instrument `Z` is assumed
+   independent of the relevant potential outcomes.
+
+2. **Exclusion restriction**
+   The instrument affects the outcome only through the treatment `W`.
+
+3. **Monotonicity**
+  In this application, infecundity can only weakly reduce fertility, so
+  `W(1) <= W(0)` under the coding where `Z = 1` indicates infecundity.
+
+4. **Additional assumption for multivalued treatments**
+  With multivalued treatments, identification additionally requires an
+  assumption about the residual association between `W(0)` and `W(1)` after
+  conditioning on observed covariates `X`.
+
+
+## Simulated Example Data
+
+We simulate a dataset inspired by fertility applications where current
+infecundity affects the number of children ever born, and an additional child
+may reduce employment in a heterogeneous way.
+
+```{r simulate-data}
+simulate_ps_ordinal <- function(
+  n = 1000,
+  max_w = 8,
+  seed = 123
+) {
+  set.seed(seed)
+
+  age <- pmin(pmax(round(rnorm(n, mean = 29, sd = 8)), 18), 45)
+
+  education <- sample(
+    c("none", "primary", "secondary+"),
+    size = n,
+    replace = TRUE,
+    prob = c(0.25, 0.30, 0.45)
+  )
+
+  urban <- rbinom(n, 1, 0.45)
+
+  sexually_active <- rbinom(
+    n, 1,
+    plogis(-3 + 0.18 * (age - 18) + 0.5 * urban)
+  )
+
+  educ_num <- c("none" = 0, "primary" = 1, "secondary+" = 2)[education]
+
+  pz <- plogis(-6.2 + 0.14 * age + 0.4 * sexually_active - 0.15 * educ_num)
+  Z <- rbinom(n, 1, pz)
+
+  latent_w0 <- -1.5 +
+    0.18 * (age - 18) +
+    0.25 * educ_num -
+    0.15 * urban +
+    rnorm(n, sd = 1.0)
+
+  W0 <- pmax(0, pmin(max_w, round(latent_w0)))
+
+  delta <- rbinom(
+    n, size = 2,
+    prob = plogis(-1.3 + 0.15 * W0 + 0.02 * (age - 25))
+  )
+
+  W1 <- pmax(0, W0 - delta)
+
+  W <- ifelse(Z == 1, W1, W0)
+
+  tau_child <- ifelse(
+    education == "none", -0.2,
+    ifelse(education == "primary", -0.1, 0.00)
+  )
+
+  eta0 <- -0.7 +
+    0.10 * educ_num +
+    0.10 * urban +
+    0.02 * (age - 25) -
+    0.0008 * (age - 25)^2
+
+  eta_y <- eta0 + tau_child * W
+  py <- plogis(eta_y)
+
+  Y <- rbinom(n, 1, py)
+
+  data.frame(
+    Y = Y,
+    Z = Z,
+    W = W,
+    age = age,
+    education = ordered(education,
+      levels = c("none", "primary", "secondary+")
+    ),
+    urban = urban,
+    W0_true = W0,
+    W1_true = W1,
+    pz_true = pz,
+    tau_child_true = tau_child
+  )
+}
+
+set.seed(42)
+simdata <- simulate_ps_ordinal(n = 1000, seed = 42)
+
+table(simdata$W)
+mean(simdata$Z)
+mean(simdata$Y)
+```
+
+## Basic Usage
+
+### Formula Interface
+
+`princeBART` uses a 2SLS-style formula:
+
+`Y ~ covariates | Z | W`
+
+```{r formula-usage, eval = FALSE}
+library(princeBART)
+library(future)
+plan(multisession, workers = 4)
+
+fit <- prince_BART(
+  Y ~ education + age + urban | Z | W,
+  rho = 0,
+  data = simdata,
+  n_chains = 2,
+  n_warmup = 100,
+  n_samples = 200,
+  instrument_overlap = c(0.1, 0.9),
+  keep_trees = TRUE
+)
+
+# saveRDS(fit, file = "inst/extdata/fit_ordinal.rds")
+```
+
+## Extracting Treatment Effects
+
+`princeBART` summarizes effects among units with a one-unit instrument-induced
+treatment shift (`W(0) - W(1) = 1`). These summaries average conditional
+effects over the empirical covariate distribution.
+
+```{r estimands}
+fit <- readRDS(.extdata("fit_ordinal.rds"))
+
+print(fit)
+
+summary(fit)
+
+coef(fit)
+```
+## Sensitivity to the multivalued-treatment assumption
+
+With multivalued treatments, identification requires an assumption about the
+association between the two potential treatment levels `W(0)` and `W(1)`.
+This association is not identified from observed data because only one of the
+two potential treatment values is observed for each individual.
+
+In `princeBART`, this assumption is governed by `rho`, which controls residual
+dependence in the latent bivariate uptake model.
+
+* `rho = 0`: conditional independence between latent `W(0)` and `W(1)` given `X`
+* `rho > 0`: units with higher baseline uptake tend to have higher uptake under `Z = 1`
+* `rho < 0`: units with higher baseline uptake tend to have lower uptake under `Z = 1`
+
+Because `rho` is not empirically identified, varying `rho` is a natural
+sensitivity analysis for ordinal-uptake conclusions.
+
+## Effect Heterogeneity by Segments
+
+We can summarize heterogeneity by fitting a shallow regression tree to the
+posterior mean conditional effects.
+
+```{r heterogeneity}
+
+res <- segment_heterogeneity(
+  fit,
+  min_compliers_bucket = 2,
+  plot = TRUE,
+  contrast = TRUE
+)
+
+res$contrast$summary
+res$plot$diff
+```
+
+The segment summaries correspond to subgroup-specific averages of conditional
+effects. Differences across segments highlight interpretable heterogeneity in
+treatment effects.
+
+```{r heterogeneity_effects}
+res$effects
+res$plot$effect
+```
+## Generalizing to a Broader Population
+
+In earlier vignettes, generalization relied on a separate external dataset
+containing the covariate distribution of the target population. Here we
+illustrate a related setting where the target population is defined within the
+same dataset.
+
+Generalizing treatment effects requires that the conditional effects estimated
+in the instrument-identified subgroup are valid for the target population once
+we average over the target covariate distribution. This relies on two
+conditions:
+(i) **conditional transportability**, meaning that after adjusting for the
+observed covariates (X), the conditional treatment effects do not differ
+systematically between the estimation sample and the target population; and
+(ii) **adequate overlap** in the covariate distributions so that the values of
+(X) observed in the target population are represented in the estimation
+sample.
+
+Diagnostics and practical guidance for assessing these conditions are discussed
+in the *Generalization with princeBART* vignette.
+
+In this example, the target population is defined using a subpopulation indicator
+within the same dataset. The generalization step then averages the conditional
+effects estimated by `princeBART` over the covariate distribution of that
+target group.
+
+```{r simulate-external}
+n <- nrow(simdata)
+
+# Survey design: 100 PSUs with varying sizes
+simdata$psu <- sample(1:100, n, replace = TRUE)
+
+# Survey weights
+simdata$weight <- runif(n, 0.5, 2)
+
+# Define a target subpopulation (e.g., adults under 60)
+simdata$eligible <- simdata$age < 60
+```
+
+```{r general-bart}
+
+# Generalize treatment effects to the target population
+pate_result <- general_BART(
+  princebart_fit = fit,
+  newdata = simdata,
+  subpop = simdata$eligible,       # Target subpopulation
+  psu = simdata$psu,               # PSU for survey inference
+  weights = simdata$weight,        # Survey weights
+  n_cores = 4,
+  verbose = TRUE
+)
+
+# View results
+print(pate_result)
+```

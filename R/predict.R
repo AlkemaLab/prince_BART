@@ -1,13 +1,13 @@
 #' Predict from Saved Trees
 #'
 #' Generate predictions for new data using saved tree structures from
-#' a princebart fit.
+#' a prince_bart fit.
 #'
-#' @param trees A data.frame of tree structures from a princebart fit.
+#' @param trees A data.frame of tree structures from a prince_bart fit.
 #' @param newdata A matrix of covariates for prediction (can be unscaled if
 #'   scaling is provided), or a list of matrices (one per posterior sample).
 #' @param scaling Optional list with `center` and `scale` named vectors for
-#'   standardizing newdata before prediction. Typically from `princebart_fit$scaling`.
+#'   standardizing newdata before prediction. Typically from `prince_bart_fit$scaling`.
 #'   If NULL, newdata is assumed to already be scaled.
 #' @param n_cores Number of cores for parallel prediction (default: 1).
 #'
@@ -71,6 +71,11 @@ predict_trees <- function(trees, newdata, scaling = NULL, n_cores = 1) {
 #'
 #' @keywords internal
 get_predictions_for_tree <- function(tree, x) {
+  tree <- as.data.frame(tree)
+  if (nrow(tree) == 0) {
+    stop("Encountered empty tree while traversing predictions")
+  }
+
   predictions <- rep(NA_real_, nrow(x))
 
   get_predictions_recursive <- function(tree, indices) {
@@ -79,7 +84,15 @@ get_predictions_for_tree <- function(tree, x) {
       return(1)
     }
 
-    goes_left <- x[indices, tree$var[1]] <= tree$value[1]
+    split_var <- tree$var[1]
+    if (!is.numeric(split_var) || is.na(split_var) || split_var < 1 || split_var > ncol(x)) {
+      stop(
+        "Tree split variable index out of bounds: ", split_var,
+        " (ncol(x)=", ncol(x), ")."
+      )
+    }
+
+    goes_left <- x[indices, split_var] <= tree$value[1]
     head_left <- tree[-1, ]
     n_nodes_left <- get_predictions_recursive(head_left, indices[goes_left])
 

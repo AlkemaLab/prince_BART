@@ -12,7 +12,7 @@ parse_psbart_formula(formula, data)
 \item{data}{A data.frame containing the variables}
 }
 \value{
-A list with components X, Y, Z, W
+A list with components X, X_raw, Y, Z, W
 }
 \description{
 Parses a formula in 2SLS style: Y ~ X1 + X2 | Z | W

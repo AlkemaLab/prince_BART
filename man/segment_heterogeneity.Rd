@@ -19,17 +19,20 @@ segment_heterogeneity(
 \item{princebart}{A fitted object from \code{prince_BART}.}
 
 \item{data}{Optional data.frame of covariates used for segmentation. If NULL,
-uses \code{princebart$data$X}.}
+uses stored raw covariates \code{princebart$data$X_raw}.}
 
 \item{vars}{Optional character vector of covariate names to include in the
 segmentation model. If NULL, uses all covariates in \code{data}.}
 
 \item{rpart_control}{An \code{rpart.control} object for tree fitting.}
 
-\item{min_compliers_bucket}{Minimum effective complier count for pruning
-(sum of posterior mean complier probabilities within a segment). Default is 100.}
+\item{min_compliers_bucket}{Minimum effective latent-group count for pruning
+(sum of posterior mean latent-group
+membership probabilities within a segment).
+Default is 100.}
 
-\item{ci_level}{Credible interval level (e.g., 0.9 for 90\% credible intervals).
+\item{ci_level}{Credible interval level
+(e.g., 0.9 for 90\% credible intervals).
 Default is 0.9.}
 
 \item{plot}{Logical; if TRUE, return ggplot2 objects for segment effects
@@ -41,42 +44,58 @@ between the segments with the highest and lowest estimated mean effects.}
 \value{
 A list with components:
 \item{tree}{Fitted (and optionally pruned) rpart tree.}
-\item{segment_data}{Input data with \code{cate} (posterior mean \eqn{\mathrm{CATE}_C(x)}),
-\code{w} (posterior mean complier probability), and \code{segment}.}
-\item{effects}{Segment-level effect summaries (MCATE_C): posterior mean, sd, credible
-interval bounds, and \code{p_gt0}, plus \code{n} (segment size) and \code{n_complier}
-(estimated complier count).}
+\item{segment_data}{Input data with \code{cate} (posterior mean unit-level
+conditional effect), \code{w} (posterior mean latent-group membership
+probability), and \code{segment}.}
+\item{effects}{Segment-level effect summaries: posterior mean, sd, credible
+interval bounds, and \code{p_gt0}, plus \code{n} (segment size) and
+\code{n_group} (estimated weighted latent-group size).}
 \item{draws}{List of posterior draw matrices by segment.}
-\item{contrast}{If \code{contrast = TRUE}, posterior comparison of the highest- vs
-lowest-effect segments, containing \code{$summary} and posterior draws in \code{$draws}.}
-\item{plot}{If \code{plot = TRUE}, a list of ggplot objects including \code{$effect}
-(segment effects) and, when \code{contrast = TRUE}, \code{$diff} (difference distribution).}
+\item{contrast}{If \code{contrast = TRUE}
+, posterior comparison of the highest- vs
+lowest-effect segments, containing \code{$summary} and
+posterior draws in \code{$draws}.}
+\item{plot}{If \code{plot = TRUE}
+, a list of ggplot objects including \code{$effect}
+(segment effects) and, when \code{contrast = TRUE}
+, \code{$diff} (difference distribution).}
 }
 \description{
 Partition the sample into covariate-defined segments and summarize how
-estimated complier effects vary across segments, following the heterogeneity
-analysis in the Prince BART paper.
+estimated latent-group effects vary across segments, following the
+heterogeneity analysis in the Prince BART paper.
 }
 \details{
 This function fits a shallow \code{rpart} regression tree to posterior mean
-conditional complier effects \eqn{\mathrm{CATE}_C(x)} and assigns each unit to
-a terminal-node segment. Tree fitting is weighted by each unit's posterior mean
-complier probability, so that splits emphasize regions of the covariate space
-with more compliers.
+conditional latent-group effects and assigns each unit to
+a terminal-node segment. Tree fitting is
+weighted by each unit's posterior mean
+latent-group membership probability, so that splits emphasize regions of the
+covariate space with more relevant units.
+
+Raw covariates stored in the fitted object are used by default so that factor
+and ordered-factor variables can be represented more interpretably in segment
+labels.
 
 For each segment, the function aggregates posterior draws of
-\eqn{\mathrm{CATE}_C(x)} using complier-probability weights to obtain a
-segment-specific average effect among compliers (an \emph{MCATE_C} estimand in
-the paper). These segment-level summaries are mixed (sample-based) estimands:
-they average conditional effects over the empirical covariate distribution within
-each segment rather than defining new population-level causal parameters.
+conditional effects using latent-group membership weights to obtain a
+segment-specific average effect for the relevant latent group.
+For binary fits,
+this reproduces segment-specific mixed effects among compliers.
+For ordinal fits,
+this targets segment-specific mixed effects among affected units defined by
+\eqn{W(0)-W(1)=1}. These segment-level summaries are mixed (sample-based)
+estimands: they average conditional effects over the empirical covariate
+distribution within each segment rather than defining new population-level
+causal parameters.
 
-The main segment summaries are returned in \code{res$effects} and visualized in
-\code{res$plot$effect} (if \code{plot = TRUE}).
+The main segment summaries are returned in \code{res$effects} and
+visualized in \code{res$plot$effect} (if \code{plot = TRUE}).
 
-Optionally, segments with small effective numbers of compliers can be pruned/merged
-for stability. If \code{contrast = TRUE}, heterogeneity is summarized by the
-posterior distribution of the difference between the segments with the largest and
-smallest estimated mean effects. Numerical results are in \code{res$contrast$summary}
-and the histogram is in \code{res$plot$diff} (if \code{plot = TRUE}).
+Optionally, segments with small effective latent-group counts can be
+pruned/merged for stability. If \code{contrast = TRUE}, heterogeneity is
+summarized by the posterior distribution of the difference between the
+segments with the largest and smallest estimated mean effects. Numerical
+results are in \code{res$contrast$summary} and the histogram is in
+\code{res$plot$diff} (if \code{plot = TRUE}).
 }

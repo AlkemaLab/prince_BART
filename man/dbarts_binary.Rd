@@ -45,4 +45,24 @@ and fail when estimating sigma.
 
 Based on the fix from princeB.r lines 679-739.
 }
+\keyword{&&}
+\keyword{(can}
+\keyword{0}
+\keyword{1}
+\keyword{1)}
+\keyword{1))}
+\keyword{2}
+\keyword{==}
+\keyword{We}
+\keyword{add:}
+\keyword{all(sort(uniqueResponses)}
+\keyword{all(uniqueResponses}
+\keyword{c(0,}
+\keyword{happen}
+\keyword{in}
 \keyword{internal}
+\keyword{length(uniqueResponses)}
+\keyword{principal}
+\keyword{stratification)}
+\keyword{uniqueResponses}
+\keyword{|}

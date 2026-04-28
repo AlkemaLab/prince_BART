@@ -1,7 +1,7 @@
 # Impute Potential Outcomes for Compliers
 
 Imputes potential outcomes Y(0) and Y(1) for compliers based on
-posterior samples from a fitted princebart model. Used internally by
+posterior samples from a fitted prince_bart model. Used internally by
 sample-based estimand functions.
 
 ## Usage

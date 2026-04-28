@@ -20,7 +20,7 @@ compute_generalizability_overlap(
 
 - princebart_fit:
 
-  A fitted `princebart` object with saved trees.
+  A fitted `prince_bart` object with saved trees.
 
 - newdata:
 

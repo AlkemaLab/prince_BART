@@ -24,6 +24,8 @@ prince_BART(
   k = 2,
   n_trees = 200L,
   workers = NULL,
+  uptake_type = c("auto", "binary", "ordinal"),
+  rho = 0,
   verbose = FALSE
 )
 ```
@@ -54,7 +56,7 @@ prince_BART(
 
 - W:
 
-  A binary treatment uptake/received vector (0/1).
+  Treatment uptake/received vector.
 
 - propensity:
 
@@ -99,27 +101,58 @@ prince_BART(
   Number of parallel workers. If NULL (default), uses all available
   cores up to `n_chains`. Set to 1 for sequential execution.
 
+- uptake_type:
+
+  Character scalar controlling uptake model: `"auto"` (default) chooses
+  binary if `W in {0,1}` and ordinal otherwise; `"binary"` enforces
+  binary uptake model; `"ordinal"` enforces ordinal/count uptake model.
+
+- rho:
+
+  Numeric in (-1, 1); residual correlation between the latent propensity
+  scores for \\W(1)\\ and \\W(0)\\ in the bivariate ordinal sampler.
+  Only used when `uptake_type = "ordinal"`. Default is `0`
+  (conditionally independent potential treatments given X). Varying this
+  parameter is a natural sensitivity analysis since the assumption is
+  not testable from the observed data.
+
 - verbose:
 
   Logical; print progress messages (default: FALSE).
 
 ## Value
 
-A list of class `"princebart"` containing posterior draws from all
+A list of class `"prince_bart"` containing posterior draws from all
 chains, including:
 
-- `imp`: Imputed principal stratum indicators (iteration x chain x
-  stratum x unit).
+- `imp`: Imputed latent quantities (iteration x chain x variable x
+  unit).
 
-- `probs`: Posterior draws of stratum probabilities and stratum-specific
-  outcome means, including `p_a`, `p_n`, `m_y0c`, `m_y1c`, etc.
+- `probs`: Posterior draws of probabilities/outcome means.
+
+- `check`: Ordinal diagnostic array (ordinal mode only).
 
 - `trees`: Fitted BART trees (if `keep_trees = TRUE`).
 
-- `data`: Processed input data, including covariates, instrument
-  propensity scores, and outcomes.
+- `data`: Stored input data, including `X_model` (processed covariates
+  used by the fitted model), `X_raw` (raw covariates when available),
+  `X` (compatibility alias to `X_model`), instrument propensity scores,
+  and outcomes.
 
 ## Details
+
+Shared preprocessing is applied in all modes: formula parsing,
+validation, covariate scaling, propensity estimation for the binary
+instrument Z, optional overlap trimming, and propensity augmentation of
+X. After preprocessing, model fitting dispatches to either binary or
+ordinal PS-BART chain runners based on `uptake_type`.
+
+For fits created from a formula or data.frame input, the returned object
+stores both a model-space covariate matrix and, when available, a raw
+covariate data.frame. The model-space representation is used internally
+for fitting and prediction; the raw representation is retained for
+downstream tasks that benefit from original factor/ordered-factor
+classes, such as [`segment_heterogeneity()`](segment_heterogeneity.md).
 
 The model jointly estimates:
 
@@ -166,6 +199,7 @@ plan(multisession, workers = 4)
 fit <- prince_BART(
   Y ~ X1 + X2 + X3 | Z | W,
   data = mydata,
+  uptake_type = "auto",
   n_chains = 4,
   n_warmup = 1000,
   n_samples = 1500

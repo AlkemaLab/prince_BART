@@ -20,6 +20,8 @@ prince_BART(
   k = 2,
   n_trees = 200L,
   workers = NULL,
+  uptake_type = c("auto", "binary", "ordinal"),
+  rho = 0,
   verbose = FALSE
 )
 }
@@ -36,7 +38,7 @@ Z is the instrument (treatment assignment), and W is treatment uptake.}
 
 \item{Z}{A binary instrument or treatment assignment vector (0/1).}
 
-\item{W}{A binary treatment uptake/received vector (0/1).}
+\item{W}{Treatment uptake/received vector.}
 
 \item{propensity}{Optional pre-computed instrument propensity scores
 \eqn{e = P(Z \mid X)}. If NULL (default), propensity scores are estimated
@@ -63,20 +65,35 @@ prediction and generalization (default: FALSE).}
 \item{workers}{Number of parallel workers. If NULL (default), uses all
 available cores up to \code{n_chains}. Set to 1 for sequential execution.}
 
+\item{uptake_type}{Character scalar controlling uptake model:
+\code{"auto"} (default) chooses binary if \code{W in \{0,1\}} and ordinal otherwise;
+\code{"binary"} enforces binary uptake model;
+\code{"ordinal"} enforces ordinal/count uptake model.}
+
+\item{rho}{Numeric in (-1, 1); residual correlation between the latent
+propensity scores for \eqn{W(1)} and \eqn{W(0)} in the bivariate ordinal
+sampler. Only used when \code{uptake_type = "ordinal"}. Default is
+\code{0} (conditionally independent potential treatments given X).
+Positive values encode a tendency for units with high baseline treatment
+to also have high treated-condition treatment; because this assumption is
+not testable from the observed data, varying \code{rho} is a natural
+sensitivity analysis.}
+
 \item{verbose}{Logical; print progress messages (default: FALSE).}
 }
 \value{
-A list of class \code{"princebart"} containing posterior draws from
+A list of class \code{"prince_bart"} containing posterior draws from
 all chains, including:
 \itemize{
-\item \code{imp}: Imputed principal stratum indicators
-(iteration x chain x stratum x unit).
-\item \code{probs}: Posterior draws of stratum probabilities and
-stratum-specific outcome means, including
-\code{p_a}, \code{p_n}, \code{m_y0c}, \code{m_y1c}, etc.
+\item \code{imp}: Imputed latent quantities
+(iteration x chain x variable x unit).
+\item \code{probs}: Posterior draws of probabilities/outcome means.
+\item \code{check}: Ordinal diagnostic array (ordinal mode only).
 \item \code{trees}: Fitted BART trees (if \code{keep_trees = TRUE}).
-\item \code{data}: Processed input data, including covariates,
-instrument propensity scores, and outcomes.
+\item \code{data}: Stored input data, including \code{X_model}
+(processed covariates used by the fitted model), \code{X_raw}
+(raw covariates when available), \code{X} (compatibility alias to
+\code{X_model}), instrument propensity scores, and outcomes.
 }
 }
 \description{
@@ -86,6 +103,19 @@ The method is designed for instrumental variable or encouragement designs
 with noncompliance and targets causal effects for compliers.
 }
 \details{
+Shared preprocessing is applied in all modes: formula parsing, validation,
+covariate scaling, propensity estimation for the binary instrument Z,
+optional overlap trimming, and propensity augmentation of X.
+After preprocessing, model fitting dispatches to either binary or ordinal
+PS-BART chain runners based on \code{uptake_type}.
+
+For fits created from a formula or data.frame input, the returned object
+stores both a model-space covariate matrix and, when available, a raw
+covariate data.frame. The model-space representation is used internally for
+fitting and prediction; the raw representation is retained for downstream
+tasks that benefit from original factor/ordered-factor classes, such as
+\code{segment_heterogeneity()}.
+
 The model jointly estimates:
 \itemize{
 \item Principal stratum membership probabilities
@@ -125,6 +155,7 @@ plan(multisession, workers = 4)
 fit <- prince_BART(
   Y ~ X1 + X2 + X3 | Z | W,
   data = mydata,
+  uptake_type = "auto",
   n_chains = 4,
   n_warmup = 1000,
   n_samples = 1500
