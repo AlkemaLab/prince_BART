@@ -6,7 +6,7 @@ The package is designed for instrumental variable and encouragement designs with
 
 The methodology is described in:
 
-Godoy Garraza, L., Speizer, I, Alkema, L. (forthcoming). Effect of family planning on employment. Statistics and Public Policy. See <https://arxiv.org/abs/2412.16320>.
+Godoy Garraza, L., Speizer, I, Alkema, L. (forthcoming). Combining BART and Principal Stratification to estimate the effect of intermediate variables on primary outcomes with application to estimating the effect of family planning on employment in Nigeria and Senegal. Statistics and Public Policy. See <https://arxiv.org/abs/2412.16320>.
 
 Godoy Garraza, L., Speizer, I, Alkema, L. (2024). How to estimate causal effects associated with family planning? An introduction to Prince BART, a new approach to effect estimation based on principal stratification and Bayesian non-parametric models. See <https://verixiv.org/articles/1-5>.
 

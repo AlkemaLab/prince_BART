@@ -12,13 +12,15 @@ explicit transportability assumptions, including sensitivity analyses.
 
 The methodology is described in:
 
-Godoy Garraza, L., Speizer, I, Alkema, L. *Combining BART and Principal
-Stratification to estimate the effect of intermediate variables on
-primary outcomes with application to estimating the effect of family
-planning on employment in Nigeria and Senegal.*  
-(working paper)
+Godoy Garraza, L., Speizer, I, Alkema, L. (forthcoming). Combining BART and Principal Stratification to estimate the effect of intermediate variables on primary outcomes with application to estimating the effect of family planning on employment in Nigeria and Senegal. Statistics and Public Policy. See <https://arxiv.org/abs/2412.16320>.
 
-Repository: <https://github.com/AlkemaLab/prince_BART>
+Godoy Garraza, L., Speizer, I, Alkema, L. (2024). How to estimate causal effects associated with family planning? An introduction to Prince BART, a new approach to effect estimation based on principal stratification and Bayesian non-parametric models. See <https://verixiv.org/articles/1-5>.
+
+Godoy Garraza, L., Speizer, I, Alkema, L. (2025). Does fertility affect woman's labor force participation in low- and middle-income settings? Findings from a Bayesian nonparametric analysis. See <https://arxiv.org/abs/2508.10787>.
+
+R package repository: <https://github.com/AlkemaLab/prince_BART>
+
+R Package website: <https://alkemalab.github.io/prince_BART>
 
 ------------------------------------------------------------------------
 
