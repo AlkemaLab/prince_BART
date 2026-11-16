@@ -101,7 +101,8 @@ general_BART <- function(
   if (!inherits(princebart_fit, "prince_bart")) {
     stop("princebart_fit must be a 'prince_bart' object")
   }
-  if (is.null(princebart_fit$trees)) {
+  trees_df <- collect_fit_trees(princebart_fit)
+  if (is.null(trees_df)) {
     stop("princebart_fit must have saved trees (use keep_trees = TRUE)")
   }
 
@@ -109,7 +110,7 @@ general_BART <- function(
   n_new <- nrow(newdata)
 
   # Get chain/sample structure from princebart fit
-  trees_df <- as.data.frame(princebart_fit$trees)
+  trees_df <- as.data.frame(trees_df)
   n_chains <- length(unique(trees_df$chain))
   n_samples <- length(unique(trees_df$iteration))
 
@@ -144,11 +145,10 @@ general_BART <- function(
   }
 
   source_group_prob <- NULL
-  if (identical(fit_uptake_type, "ordinal") &&
-      !is.null(princebart_fit$imp) && length(dim(princebart_fit$imp)) == 4) {
-    w0_imp <- princebart_fit$imp[, , "w0", , drop = FALSE]
-    w1_imp <- princebart_fit$imp[, , "w1", , drop = FALSE]
-    source_group_prob <- apply((w0_imp - w1_imp) == 1, 4, mean, na.rm = TRUE)
+  if (identical(fit_uptake_type, "ordinal")) {
+    source_group_prob <- Reduce(`+`, lapply(princebart_fit$chains,
+      function(chain) colMeans((chain$w0 - chain$w1) == 1,
+        na.rm = TRUE))) / length(princebart_fit$chains)
   }
 
   # Get scaling parameters from canonical fit metadata.
@@ -231,9 +231,9 @@ general_BART <- function(
   if (verbose) message("Step 1: Imputing missing covariates...")
 
   # Step 1: Multiple imputation of missing X
-  mi_array <- NULL
+  mi_draws <- NULL
   if (length(mi_vars) > 0) {
-    mi_array <- impute_missing_x(
+    mi_draws <- impute_missing_x(
       source_X = source_X[, x_cols, drop = FALSE],
       newdata = newdata,
       mi_vars = mi_vars,
@@ -262,9 +262,9 @@ general_BART <- function(
 
   # Step 3: Predict Y(0) and Y(1) in external data
   preds <- predict_external_outcomes(
-    trees = princebart_fit$trees,
+    trees = trees_df,
     newdata = newdata,
-    mi_array = mi_array,
+    mi_draws = mi_draws,
     mi_vars = mi_vars,
     propensity_bart = propensity_bart,
     e_precomputed = e_precomputed,
@@ -321,7 +321,7 @@ general_BART <- function(
     source_Z = source_Z,
     fit_uptake_type = fit_uptake_type,
     source_group_prob = source_group_prob,
-    trees = princebart_fit$trees,
+    trees = trees_df,
     scaled_center = scaled_center,
     scaled_scale = scaled_scale,
     n_obs = sum(subpop),
@@ -419,21 +419,14 @@ impute_missing_x <- function(
     aperm(result, c(3, 2, 1))
   })
 
-  # Each element is units x samples x chains (already permuted above)
-  # Stack into 4D array: units x vars x samples x chains
-  mi_array <- array(NA_real_, dim = c(n_units, length(mi_vars), n_samples, n_chains))
-  for (j in seq_along(mi_vars)) {
-    mi_array[, j, , ] <- mi_list[[j]]
-  }
-
-  dimnames(mi_array) <- list(
-    unit = NULL,
-    var = mi_vars,
-    iteration = NULL,
-    chain = NULL
-  )
-
-  mi_array
+  # Keep the same iteration-by-unit matrix contract as the fitted chains.
+  lapply(seq_len(n_chains), function(ch) {
+    draws <- lapply(mi_list, function(x) {
+      t(matrix(x[, , ch], nrow = n_units, ncol = n_samples))
+    })
+    names(draws) <- mi_vars
+    draws
+  })
 }
 
 
@@ -443,7 +436,7 @@ impute_missing_x <- function(
 predict_external_outcomes <- function(
   trees,
   newdata,
-  mi_array,
+  mi_draws,
   mi_vars,
   propensity_bart,
   e_precomputed = NULL,
@@ -485,10 +478,10 @@ predict_external_outcomes <- function(
     x <- newdata
 
     # Inject MI imputations if available
-    # mi_array is [units, vars, iterations, chains]
-    if (!is.null(mi_array) && length(mi_vars) > 0) {
+    # mi_draws[[chain]][[variable]] is iteration by unit.
+    if (!is.null(mi_draws) && length(mi_vars) > 0) {
       for (j in seq_along(mi_vars)) {
-        x[[mi_vars[j]]] <- mi_array[, j, iter_idx, chain_idx]
+        x[[mi_vars[j]]] <- mi_draws[[chain_idx]][[mi_vars[j]]][iter_idx, ]
       }
     }
 
@@ -599,45 +592,6 @@ predict_external_outcomes <- function(
     y0 = y0_array,
     y1 = y1_array
   )
-}
-
-
-# Helper: predict from one sample's trees
-predict_one_sample <- function(trees, x) {
-  trees <- as.data.frame(trees)
-  if (nrow(trees) == 0) {
-    stop("No trees available for this posterior sample/model component")
-  }
-  n_trees <- max(trees$tree)
-
-  preds <- sapply(seq_len(n_trees), function(i) {
-    one_tree <- trees[trees$tree == i, ]
-    if (nrow(one_tree) == 0) {
-      stop("Missing tree id ", i, " in posterior sample component")
-    }
-    get_predictions_for_tree(one_tree, x)
-  })
-
-  stats::pnorm(rowSums(preds))
-}
-
-
-predict_one_sample_raw <- function(trees, x) {
-  trees <- as.data.frame(trees)
-  if (nrow(trees) == 0) {
-    stop("No trees available for raw posterior sample/model component")
-  }
-  n_trees <- max(trees$tree)
-
-  preds <- sapply(seq_len(n_trees), function(i) {
-    one_tree <- trees[trees$tree == i, ]
-    if (nrow(one_tree) == 0) {
-      stop("Missing tree id ", i, " in raw posterior sample component")
-    }
-    get_predictions_for_tree(one_tree, x)
-  })
-
-  rowSums(preds)
 }
 
 
@@ -759,7 +713,7 @@ compute_generalizability_overlap <- function(
   # Predict P(group|X):
   # - binary fit -> complier probability via "co" trees
   # - ordinal fit -> affected probability via imp draws
-  trees <- as.data.frame(princebart_fit$trees)
+  trees <- as.data.frame(collect_fit_trees(princebart_fit))
   trees_co <- trees[trees$m == "co", ]
 
   # Fit instrument propensity e = P(Z|X) using unscaled covariates
@@ -826,14 +780,9 @@ compute_generalizability_overlap <- function(
     if (verbose) {
       message("  Using experimental ordinal overlap diagnostic (affected-unit probability)")
     }
-    if (is.null(princebart_fit$imp) || length(dim(princebart_fit$imp)) != 4) {
-      stop("Cannot compute ordinal overlap: fit has no valid imp array")
-    }
-
-    imp <- princebart_fit$imp
-    w0_imp <- imp[, , "w0", , drop = FALSE]
-    w1_imp <- imp[, , "w1", , drop = FALSE]
-    pi_c_source <- apply((w0_imp - w1_imp) == 1, 4, mean, na.rm = TRUE)
+    pi_c_source <- Reduce(`+`, lapply(princebart_fit$chains,
+      function(chain) colMeans((chain$w0 - chain$w1) == 1,
+        na.rm = TRUE))) / length(princebart_fit$chains)
 
     pi_c_bart <- dbarts::bart2(
       source_X_unscaled[, x_cols, drop = FALSE],
@@ -917,123 +866,6 @@ survey_pate <- function(tau, subpop, psu, weights, seed = NULL) {
     ci = stats::quantile(pate_draws, c(0.025, 0.975), na.rm = TRUE),
     draws = pate_draws
   )
-}
-
-
-# -----------------------------------------------------------------------------
-# Helper: Sensitivity analysis for confounding (weight-shift bounds)
-# -----------------------------------------------------------------------------
-sensitivity_analysis <- function(tau, subpop, psu, weights, gamma, seed = NULL) {
-
-  # Sample subset of draws for computational efficiency
-  n_draws <- ncol(tau)
-  n_sample <- min(n_draws, 100)
-
-  if (!is.null(seed)) set.seed(seed)
-  sample_idx <- sample(n_draws, n_sample)
-  tau_sample <- tau[, sample_idx, drop = FALSE]
-
-  # Find lower bound (inf)
-  lower <- compute_shift_pate(
-    tau = tau_sample,
-    subpop = subpop,
-    psu = psu,
-    weights = weights,
-    gamma = gamma,
-    inf = TRUE,
-    seed = seed
-  )
-
-  # Find upper bound (sup)
-  upper <- compute_shift_pate(
-    tau = tau_sample,
-    subpop = subpop,
-    psu = psu,
-    weights = weights,
-    gamma = gamma,
-    inf = FALSE,
-    seed = seed
-  )
-
-  list(
-    gamma = gamma,
-    lower = lower,
-    upper = upper
-  )
-}
-
-
-compute_shift_pate <- function(tau, subpop, psu, weights, gamma, inf, seed = NULL) {
-  tau <- as.matrix(tau)
-  tau[!subpop, ] <- NA
-  n_draws <- ncol(tau)
-
-  n_psu <- length(unique(psu))
-  p_c <- tapply(weights, psu, mean)
-  n_c <- tapply(!is.na(psu), psu, sum)
-
-  if (!is.null(seed)) set.seed(seed)
-  bb_list <- lapply(seq_len(n_draws), function(r) bayesian_bootstrap(n_psu))
-
-  pate_draws <- sapply(seq_len(n_draws), function(k) {
-    y <- tau[, k]
-    shift_wts <- find_shift_weights(inf = inf, gamma = gamma, y = y, wts = weights)
-    psu_tau <- tapply(y * shift_wts, psu, mean, na.rm = TRUE)
-    stats::weighted.mean(psu_tau, bb_list[[k]] * p_c * n_c, na.rm = TRUE)
-  })
-
-  list(
-    estimate = mean(pate_draws, na.rm = TRUE),
-    sd = stats::sd(pate_draws, na.rm = TRUE),
-    ci = stats::quantile(pate_draws, c(0.025, 0.975), na.rm = TRUE)
-  )
-}
-
-
-#' Find optimal weight shift for sensitivity bounds
-#' @keywords internal
-find_shift_weights <- function(inf, gamma, y, wts = NULL) {
-  if (!requireNamespace("CVXR", quietly = TRUE)) {
-    warning("CVXR not available, returning uniform weights")
-    return(rep(1, length(y)))
-  }
-
-  if (is.null(wts)) wts <- rep(1, length(y))
-
-  new_wts <- rep(0, length(y))
-  s <- !is.na(y)
-
-  wts_s <- as.numeric(wts)[s]
-  sum_wts <- sum(wts_s)
-  wts_s <- wts_s / sum(wts_s)
-  y_s <- y[s]
-  n <- sum(s)
-
-  r <- CVXR::Variable(n)
-
-  if (inf) {
-    objective <- CVXR::Minimize(sum(y_s * wts_s * r))
-  } else {
-    objective <- CVXR::Maximize(sum(y_s * wts_s * r))
-  }
-
-  constraints <- list(
-    sum(wts_s * r) == 1,
-    r <= gamma,
-    r >= 1 / gamma
-  )
-
-  problem <- CVXR::Problem(objective, constraints = constraints)
-  result <- solve(problem, solver = "ECOS")
-
-  if (result$status != "optimal") {
-    warning("Optimization did not converge, returning uniform weights")
-    return(rep(1, length(y)))
-  }
-
-  r_val <- round(result$getValue(r), 4)
-  new_wts[s] <- wts_s * r_val * sum_wts
-  new_wts
 }
 
 
@@ -1337,113 +1169,6 @@ general_BART_overlap <- function(
 # Sensitivity Function: Weight-Shift Bounds
 # -----------------------------------------------------------------------------
 
-#' Sensitivity Analysis for Unmeasured Confounding
-#'
-#' Compute sensitivity bounds for the PATE estimate under potential
-#' unmeasured confounding using weight-shift optimization.
-#'
-#' @param object A `general_pate` object from [general_BART()]
-#' @param gamma Numeric sensitivity parameter > 1. Represents the maximum
-#'   ratio by which observation weights can be shifted. Larger values allow
-#'   more severe confounding.
-#' @param n_sample Number of posterior draws to use for sensitivity analysis.
-#'   Default is 100.
-#' @param verbose Logical; print progress messages. Default is FALSE.
-#'
-#' @return A list with components:
-#' \describe{
-#'   \item{gamma}{The sensitivity parameter used}
-#'   \item{lower}{Lower bound estimate with CI}
-#'   \item{upper}{Upper bound estimate with CI}
-#' }
-#'
-#' @details
-#' The sensitivity analysis follows the weight-shift framework where
-#' observation weights can be multiplied by a factor between 1/gamma and
-#' gamma. The lower and upper bounds represent the extremes of the PATE
-#' estimate under this weight perturbation.
-#'
-#' Requires the CVXR package for optimization.
-#'
-#' @seealso [general_BART()], [general_BART_overlap()]
-#'
-#' @examples
-#' \dontrun{
-#' fit <- general_BART(princebart_fit, newdata, ...)
-#' sens <- general_BART_transportability(fit, gamma = 1.5)
-#' }
-#'
-#' @export
-general_BART_transportability <- function(
-    object,
-    gamma,
-    n_sample = 100,
-    verbose = FALSE
-) {
-  if (!inherits(object, "general_pate")) {
-    stop("object must be a 'general_pate' object from general_BART()")
-  }
-
-  if (!is.numeric(gamma) || gamma <= 1) {
-    stop("gamma must be numeric and > 1")
-  }
-
-  if (!requireNamespace("CVXR", quietly = TRUE)) {
-    stop("Package 'CVXR' is required for sensitivity analysis")
-  }
-
-  if (verbose) message("Running sensitivity analysis (gamma = ", gamma, ")...")
-
-  # Get tau from object
-  tau <- object$tau
-  n_new <- dim(tau)[1]
-  n_iter <- dim(tau)[2]
-  n_ch <- dim(tau)[3]
-  tau_2d <- matrix(tau, nrow = n_new, ncol = n_iter * n_ch)
-
-  # Sample subset of draws for computational efficiency
-  n_draws <- ncol(tau_2d)
-  n_sample <- min(n_draws, n_sample)
-
-  set.seed(object$seed)
-  sample_idx <- sample(n_draws, n_sample)
-  tau_sample <- tau_2d[, sample_idx, drop = FALSE]
-
-  if (verbose) message("  Computing lower bound...")
-
-  # Find lower bound (inf)
-  lower <- compute_shift_pate(
-    tau = tau_sample,
-    subpop = object$subpop,
-    psu = object$psu,
-    weights = object$weights,
-    gamma = gamma,
-    inf = TRUE,
-    seed = object$seed
-  )
-
-  if (verbose) message("  Computing upper bound...")
-
-  # Find upper bound (sup)
-  upper <- compute_shift_pate(
-    tau = tau_sample,
-    subpop = object$subpop,
-    psu = object$psu,
-    weights = object$weights,
-    gamma = gamma,
-    inf = FALSE,
-    seed = object$seed
-  )
-
-  result <- list(
-    gamma = gamma,
-    lower = lower,
-    upper = upper
-  )
-
-  if (verbose) message("Done.")
-  result
-}
 
 
 # -----------------------------------------------------------------------------
