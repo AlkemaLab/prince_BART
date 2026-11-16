@@ -1,0 +1,287 @@
+---
+title: "Introduction to princeBART"
+author: "princeBART authors"
+date: last-modified
+format:
+  html:
+    toc: true
+editor:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, comment = "#>",
+  fig.width = 8, fig.height = 5, out.width = "100%"
+)
+library(future)
+library(princeBART)
+library(ivreg)
+library(sandwich)
+set.seed(1)
+
+# One mixed complier effect per posterior draw, retaining the per-chain storage.
+mixed_effect_draws <- function(fit) {
+  unlist(lapply(fit$chains, function(chain) {
+    p_c <- 1 - chain$p_a - chain$p_n
+    rowSums(p_c * (chain$m_y1c - chain$m_y0c)) / rowSums(p_c)
+  }), use.names = FALSE)
+}
+```
+
+## Overview
+
+princeBART implements **principal stratification with Bayesian Additive
+Regression Trees (BART)**. It estimates treatment effects for compliers:
+units whose treatment uptake changes in response to an instrument. See
+the [background](background.qmd) for an introduction to principal
+stratification and BART.
+
+The framework uses an instrument **Z**, received treatment **W**,
+outcome **Y**, and covariates **X**. The instrument may be randomized
+assignment or an encouragement to take treatment. Covariates can affect
+assignment, uptake, and outcomes; unobserved variables **U** may affect
+uptake and outcomes.
+
+## Setup and assumptions
+
+The binary model has three principal strata under monotonicity:
+
+| Stratum       | W(0) | W(1) |
+|---------------|------|------|
+| Compliers     | 0    | 1    |
+| Never-takers  | 0    | 0    |
+| Always-takers | 1    | 1    |
+
+Here W(z) is uptake under assignment z. Defiers, with W(0) = 1 and W(1)
+= 0, are excluded. The current fitter requires a binary outcome; uptake
+can be binary or count/ordinal.
+
+The identifying assumptions are:
+
+1.  **Conditional randomization:** assignment is independent of
+    potential outcomes and uptake given X.
+2.  **Exclusion:** Z affects Y only through received treatment W.
+3.  **Monotonicity:** W(1) \>= W(0) in the binary model.
+4.  **Overlap and relevance:** both assignment arms are possible given
+    X, and assignment changes uptake for some units.
+
+Writing Y(w) for the potential outcome under received treatment w, the
+conditional complier effect is
+
+$$
+\mathrm{CATE}_C(x)
+= E[Y(1)-Y(0)\mid W(0)=0,\ W(1)=1,\ X=x].
+$$
+
+For binary outcomes, this is a difference in outcome probabilities.
+Averaging it over the covariate distribution of compliers gives the
+complier average causal effect (CACE), also called the local average
+treatment effect (LATE).
+
+## Simulated example data
+
+The built-in simulator separates a reusable setup from data generation.
+Random coefficients use the caller's RNG; the setup's seed controls the
+data.
+
+```{r simulate-data}
+set.seed(1)
+simdata <- ps_sim_data(n = 800, seed = 11)
+head(simdata$data, 5)
+```
+
+By default, $X_1$ and $U$ are independent $N(0,1)$ variables, and $X_2$
+is an independent Bernoulli(0.5) variable. Let
+$\widetilde X = (1, X_1, X_2)$ and
+$\operatorname{expit}(t) = 1/(1+\exp(-t))$. The generator uses
+
+$$
+\begin{aligned}
+P(G=g\mid X,U)
+&\propto \exp(\widetilde X^\top\alpha_g+\gamma_g U),
+\quad g\in\{(0,0),(0,1),(1,1)\},\\
+Z\mid X &\sim \mathrm{Bernoulli}\{\operatorname{expit}(\widetilde X^\top\beta)\},\\
+W &=(1-Z)W(0)+ZW(1),\\
+Y\mid X,U,G,W &\sim \mathrm{Bernoulli}\{
+\operatorname{expit}(\widetilde X^\top\theta_G+\delta_G U+\tau_G W)\}.
+\end{aligned}
+$$
+
+Coefficients are drawn once from $N(0,1)$. The coefficient $\tau_G$ is a
+treatment effect on the log-odds scale; it is not itself a probability
+difference. For other covariate distributions, transformations, and
+fixed coefficients, see [Simulation](Simulation.qmd).
+
+The simulator returns:
+
+- `data`: observed covariates, Z, W, and Y.
+- `alldata`: also includes transformed covariates, the true stratum G,
+  unobserved U, potential uptake W0/W1, assignment propensity, and
+  conditional outcome means `mean_y0`/`mean_y1` under Z = 0/1.
+- `setup`: all settings, fixed coefficients, and the stratum weight
+  matrix. Its rows index W(0), columns index W(1); zeros exclude strata.
+
+```{r simulation-truth-output}
+head(simdata$alldata[c("G", "U", "W0", "W1", "propensity",
+                      "mean_y0", "mean_y1")], 5)
+```
+
+## Basic usage and comparison with 2SLS
+
+The formula is `Y ~ covariates | Z | W`.
+
+```{r formula-usage}
+plan(multisession, workers = 4)
+set.seed(12)
+fit <- prince_BART(
+  Y ~ x1_1 + x2_1 | Z | W,
+  data = simdata$data,
+  n_chains = 4, n_warmup = 500, n_samples = 1000
+)
+summary(fit)
+```
+
+The default summary reports mixed average effects for compliers. Other
+estimands are available through `extract()`, for example
+`extract(fit, "sate_c")` for sample effects; see `?extract` for
+definitions. The simulation supplies a reference by averaging
+conditional mean differences among the true compliers:
+
+```{r complier-ground-truth}
+truth <- simdata$alldata
+is_complier <- truth$W0 == 0 & truth$W1 == 1
+true_sate_c <- mean((truth$mean_y1 - truth$mean_y0)[is_complier])
+```
+
+This reference averages conditional means for the realized simulated
+compliers. It is not the realized difference of two binary potential
+outcomes, which the simulator does not return.
+
+Use `ivreg` for 2SLS, with an HC1 robust, normal-approximation 95%
+confidence interval. Include the covariates on both sides of the IV
+formula.
+
+```{r effect-comparison}
+fit_2sls <- ivreg(Y ~ W + x1_1 + x2_1 | Z + x1_1 + x2_1,
+                  data = simdata$data)
+tsls_estimate <- unname(coef(fit_2sls)["W"])
+tsls_se <- sqrt(vcovHC(fit_2sls, type = "HC1")["W", "W"])
+tsls_ci <- tsls_estimate + qnorm(c(0.025, 0.975)) * tsls_se
+
+bart_draws <- mixed_effect_draws(fit)
+bart_ci <- quantile(bart_draws, c(0.025, 0.975), names = FALSE)
+comparison <- data.frame(
+  Method = c("Simulation reference", "princeBART: mixed complier effect", "2SLS"),
+  Estimate = c(true_sate_c, mean(bart_draws), tsls_estimate),
+  Lower = c(NA, bart_ci[1], tsls_ci[1]),
+  Upper = c(NA, bart_ci[2], tsls_ci[2]),
+  Interval = c("Reference", "95% credible", "95% confidence")
+)
+knitr::kable(comparison, digits = 3)
+```
+
+All estimates are probability differences. Agreement is not guaranteed:
+logistic outcome models imply heterogeneous probability differences, and
+2SLS and mixed complier averages can weight those effects differently.
+These Wald confidence intervals also rely on adequate instrument
+strength.
+
+## Segment heterogeneity
+
+The two populations share the same X1 distribution. X2 is always 0 in
+`sim1` and always 1 in `sim2`. They share all coefficients except the
+complier treatment coefficient: -3 for X2 = 0 and +3 for X2 = 1. These
+are log-odds coefficients; the probability-scale effects also depend on
+the baseline outcome model. The model receives X1 and X2 and must learn
+the split itself.
+
+```{r heterogeneity-data}
+set.seed(100) # Fix the shared coefficients independently of earlier fits.
+sim1 <- ps_sim_setup(
+  n = 600, x1_mean = 0, x1_var = 0.5, x2_p = 0,
+  seed = 101,
+  stratum_weights = matrix(c(1, 0, 8, 1), 2, 2)
+)
+sim1$coefficients$y_w[1, 2] <- -3
+
+sim2 <- sim1
+sim2$x2_p <- 1
+sim2$seed <- 102
+sim2$coefficients$y_w[1, 2] <- 3
+
+simdata1 <- ps_sim_data(sim1)
+simdata2 <- ps_sim_data(sim2)
+
+data_combined <- rbind(simdata1$data, simdata2$data)
+```
+
+Approximate each population's true complier effect using a large
+reference simulation from its setup. Average the known conditional mean
+differences among true compliers; no fitted model enters this Monte
+Carlo reference.
+
+```{r heterogeneity-truth}
+segment_truth <- vapply(list(sim1, sim2), function(setup) {
+  setup$n <- 100000L
+  setup$seed <- 104
+  reference <- ps_sim_data(setup)$alldata
+  with(reference, mean((mean_y1 - mean_y0)[W0 == 0 & W1 == 1]))
+}, numeric(1))
+names(segment_truth) <- c("0", "1")
+```
+
+```{r heterogeneity-fit}
+set.seed(103)
+fit_sh <- prince_BART(
+  Y ~ x1_1 + x2_1 | Z | W,
+  data = data_combined,
+  propensity = c(simdata1$alldata$propensity, simdata2$alldata$propensity),
+  n_chains = 4, n_warmup = 500, n_samples = 1000,
+  n_trees = 50, keep_trees = TRUE
+)
+```
+
+Fit a tree with at most two leaves, allowing it to choose between X1 and
+X2. The cross-tabulation checks group recovery. For segments containing
+only one X2 value, compare the posterior effect and 95% credible
+interval with that population's simulation truth. A mixed segment has no
+matched group truth and is marked `NA`.
+
+```{r heterogeneity}
+res <- segment_heterogeneity(
+  fit_sh,
+  rpart_control = rpart::rpart.control(cp = 0, maxdepth = 1),
+  min_compliers_bucket = 100, ci_level = 0.95,
+  plot = TRUE, contrast = TRUE
+)
+
+recovery <- table(X2 = data_combined$x2_1, Segment = res$segment_data$segment)
+recovery
+cat("Both X2 groups recovered:",
+    ncol(recovery) == 2L && all(colSums(recovery > 0) == 1L), "\n")
+
+effects <- res$effects[res$effects$segment != "overall", ]
+x2_group <- vapply(effects$segment, function(segment) {
+  values <- unique(data_combined$x2_1[res$segment_data$segment == segment])
+  if (length(values) == 1L) values else NA_real_
+}, numeric(1))
+comparison <- data.frame(
+  Segment = effects$segment, X2 = x2_group,
+  Truth_MC = unname(segment_truth[as.character(x2_group)]),
+  Estimate = effects$mean, Lower = effects$ci_lower, Upper = effects$ci_upper
+)
+comparison$Truth_in_interval <- with(comparison, Truth_MC >= Lower & Truth_MC <= Upper)
+knitr::kable(comparison, digits = 3)
+res$plot$effect +
+  ggplot2::geom_vline(xintercept = unname(segment_truth), linetype = 2) +
+  ggplot2::labs(caption = "Dashed lines: population complier effects from the simulation setups.")
+```
+
+```{r heterogeneity-contrast}
+res$contrast$summary
+res$plot$diff
+```
+
+
